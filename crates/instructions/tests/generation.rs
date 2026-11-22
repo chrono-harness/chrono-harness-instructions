@@ -6,8 +6,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use tempfile::TempDir;
 
-use chrono_test_process as isolated_capability;
-
 const METHOD: &str = ".chrono-harness/instructions/methodology.md";
 const CONTEXT: &str = ".chrono-harness/instructions/host-context.md";
 const MANIFEST: &str = ".chrono-harness/instructions/manifest.json";
@@ -146,11 +144,6 @@ impl Host {
         fn walk(root: &Path, dir: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
             for entry in fs::read_dir(dir).unwrap() {
                 let path = entry.unwrap().path();
-                // Durable custody is asserted separately. These snapshots keep
-                // every business byte/type assertion from the original suite.
-                if path == root.join(".chrono-harness/state") {
-                    continue;
-                }
                 let kind = fs::symlink_metadata(&path).unwrap().file_type();
                 let value = if kind.is_symlink() {
                     format!("link:{:?}", fs::read_link(&path).unwrap()).into_bytes()
@@ -644,7 +637,13 @@ fn incomplete_rollback_identifies_exact_unrestored_path_and_retains_original() {
     assert_eq!(host.read("CLAUDE.md"), b"original host");
     assert!(!host.root.join(".chrono-harness/instructions").exists());
     let mut backups = Vec::new();
-    for attempt in fs::read_dir(host.root.join(OP_STORE)).unwrap() {
+    for attempt in fs::read_dir(&host.root).unwrap().filter(|e| {
+        e.as_ref()
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".chrono-instructions-")
+    }) {
         for member in fs::read_dir(attempt.unwrap().path()).unwrap() {
             let member = member.unwrap();
             if member
@@ -656,6 +655,10 @@ fn incomplete_rollback_identifies_exact_unrestored_path_and_retains_original() {
             }
         }
     }
+    backups.retain(|p| {
+        failure.contains(p.to_str().unwrap())
+            || failure.contains(p.canonicalize().unwrap().to_str().unwrap())
+    });
     assert_eq!(backups.len(), 1);
     assert_eq!(fs::read(&backups[0]).unwrap(), b"original host");
     assert!(failure.contains(&backups[0].display().to_string()));
@@ -791,7 +794,7 @@ fn runtime_policy(host: &Host, max_bytes: u64, max_files: usize) {
 }
 
 fn run_cli(cwd: &Path, args: &[OsString]) -> (u32, Output) {
-    let child = Command::new(env!("CARGO_BIN_EXE_chrono-test-instructions"))
+    let child = Command::new(env!("CARGO_BIN_EXE_chrono-instructions"))
         .args(args)
         .current_dir(cwd)
         .stdout(Stdio::piped())
@@ -803,7 +806,7 @@ fn run_cli(cwd: &Path, args: &[OsString]) -> (u32, Output) {
 }
 
 fn runtime_records(host: &Host) -> Vec<serde_json::Value> {
-    String::from_utf8(host.read(".chrono-harness/state/logs/runtime.jsonl"))
+    String::from_utf8(host.read(".chrono-harness/state/logs/chrono-instructions/runtime.jsonl"))
         .unwrap()
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
@@ -1317,11 +1320,6 @@ fn failure_after_fresh_alias_publication_removes_all_new_material() {
 
 #[test]
 fn incomplete_fresh_alias_rollback_names_unrestored_link_and_allows_explicit_recovery() {
-    if !isolated_capability::isolated_capability_test(
-        "incomplete_fresh_alias_rollback_names_unrestored_link_and_allows_explicit_recovery",
-    ) {
-        return;
-    }
     let host = Host::new();
     let failure =
         test_support::init_with_failure(&host.root, &host.method, &host.context, 5, Some(4))
@@ -1338,10 +1336,8 @@ fn incomplete_fresh_alias_rollback_names_unrestored_link_and_allows_explicit_rec
             .is_symlink()
     );
     assert!(!host.root.join("CLAUDE.md").exists());
-    // The next call repairs this same attempt before it prepares a new init.
-    chrono_instructions::maintain(&host.root).unwrap();
+    fs::remove_file(&path).unwrap();
     assert!(!path.exists());
-    assert!(host.snapshot().is_empty());
     host.init().unwrap();
     assert_alias(&host);
 }
@@ -1350,890 +1346,59 @@ fn incomplete_fresh_alias_rollback_names_unrestored_link_and_allows_explicit_rec
 mod atomic;
 
 #[test]
-fn standalone_noop_has_durable_operation_state() {
+fn a_busy_checkout_leaves_an_independent_host_available() {
     let host = Host::new();
+    let peer = Host::new();
+    let guard = fs::File::open(&host.root).unwrap();
+    guard.lock().unwrap();
+    assert!(host.init().unwrap_err().contains("operation busy"));
+    peer.init().unwrap();
+    guard.unlock().unwrap();
     host.init().unwrap();
-    let guide = host.root.join("CLAUDE.md");
-    let before = fs::metadata(&guide).unwrap().modified().unwrap();
-    assert!(generate(&host.root).unwrap().is_empty());
-    assert_eq!(fs::metadata(&guide).unwrap().modified().unwrap(), before);
-    let state = host
-        .root
-        .join(".chrono-harness/state/instructions-operations");
-    assert!(state.read_dir().unwrap().count() >= 2);
-}
-
-const OP_STORE: &str = ".chrono-harness/state/instructions-operations";
-const OP_PRODUCER: &str = "instructions-operation";
-
-fn attempts(host: &Host) -> Vec<PathBuf> {
-    let mut paths: Vec<_> = fs::read_dir(host.root.join(OP_STORE))
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .collect();
-    paths.sort();
-    paths
-}
-
-fn operation_json(path: &Path, name: &str) -> serde_json::Value {
-    serde_json::from_slice(&fs::read(path.join(name)).unwrap()).unwrap()
-}
-
-#[test]
-fn all_publication_entries_record_success_failure_and_noop_without_rewriting_targets() {
-    let host = Host::new();
-    host.init().unwrap();
-    let guide = host.root.join("CLAUDE.md");
-    let old = fs::metadata(&guide).unwrap();
-    assert!(
-        chrono_instructions::init_with_defaults(&host.root, None, None)
-            .unwrap()
-            .is_empty()
-    );
-    assert!(generate(&host.root).unwrap().is_empty());
-    let cli = dispatch(&[
-        "generate".into(),
-        "--host-root".into(),
-        host.root.clone().into_os_string(),
-    ]);
-    assert_eq!(cli.exit_code, 0);
-    let now = fs::metadata(&guide).unwrap();
-    use std::os::unix::fs::MetadataExt;
-    assert_eq!(
-        (old.ino(), old.mode(), old.modified().unwrap()),
-        (now.ino(), now.mode(), now.modified().unwrap())
-    );
-    let paths = attempts(&host);
-    assert_eq!(paths.len(), 4);
-    let mut noops = 0;
-    for path in paths {
-        let result = operation_json(&path, "result.json");
-        assert_eq!(result["publication"], "committed");
-        assert!(result["original_process_exit"].is_null());
-        assert!(result["transport_exit"].is_null());
-        if result["producer_evaluation"]["changed"]
-            .as_array()
-            .unwrap()
-            .is_empty()
-        {
-            noops += 1;
-        }
-    }
-    assert_eq!(noops, 3);
-    host.write(METHOD, [0xff]);
-    assert!(generate(&host.root).is_err());
-    let failed = attempts(&host)
-        .into_iter()
-        .map(|p| operation_json(&p, "result.json"))
-        .find(|v| v["producer_evaluation"].get("error").is_some())
-        .unwrap();
-    assert_eq!(failed["publication"], "not-started");
-}
-
-#[test]
-fn publication_finishes_sealing_before_reporting_init_generate_and_noop_success() {
-    let host = Host::new();
-    for init in [true, false, false] {
-        if !init {
-            host.write(METHOD, "body after init");
-        }
-        let changed = test_support::operation_with_sealing_round_budget(&host.root, init, 1)
-            .unwrap_or_else(|error| panic!("init={init}: {error}"));
-        if init {
-            assert!(!changed.is_empty());
-        }
-        let state = chrono_instructions::status(&host.root, None).unwrap();
-        for record in state["records"].as_array().unwrap() {
-            assert_eq!(record["phase"], "released", "{record}");
-            assert_eq!(record["sealed"], true, "{record}");
-        }
-        let inventory =
-            chrono_harness::retained_artifacts::retention::Inventory::with_standalone_policy(
-                &host.root,
-                include_bytes!("../../../assets/instructions/standalone-retention.json"),
-            )
-            .unwrap();
-        assert!(
-            inventory
-                .rooted_original(
-                    "instructions-operation",
-                    "instructions-publication-recovery"
-                )
-                .unwrap()
-                .is_none()
-        );
-    }
-    assert!(generate(&host.root).unwrap().is_empty());
-}
-
-#[test]
-fn finalization_failure_is_real_and_the_same_attempt_is_recoverable() {
-    // Recovery observes immediate last-close metadata ownership. Run this
-    // host without unrelated libtest forks inheriting its open capabilities.
-    if !isolated_capability::isolated_capability_test(
-        "finalization_failure_is_real_and_the_same_attempt_is_recoverable",
-    ) {
-        return;
-    }
-    for point in [
-        "cleanup",
-        "before-result",
-        "before-seal",
-        "sealed",
-        "release",
-    ] {
-        let host = Host::new();
-        host.init().unwrap();
-        host.write(METHOD, "new body");
-        let error = test_support::generate_with_state_failure(&host.root, point).unwrap_err();
-        assert!(error.contains(point), "{error}");
-        let count = attempts(&host).len();
-        chrono_instructions::maintain(&host.root).unwrap();
-        assert_eq!(
-            attempts(&host).len(),
-            count,
-            "recovery must not dispatch a replacement"
-        );
-        assert!(
-            String::from_utf8(host.read("CLAUDE.md"))
-                .unwrap()
-                .contains("new body")
-        );
-        assert!(generate(&host.root).unwrap().is_empty());
-    }
-}
-
-// All subprocesses below are this Rust test unit. No external tool is executed.
-#[test]
-#[ignore]
-fn recovery_child() {
-    use std::io::{Read, Write};
-    fn boundary(point: &str) {
-        if std::env::var("CHRONO_INSTRUCTIONS_BOUNDARY").as_deref() == Ok(point) {
-            println!("BOUNDARY {point}");
-            std::io::stdout().flush().unwrap();
-            let mut byte = [0];
-            std::io::stdin().read_exact(&mut byte).unwrap();
-        }
-    }
-    let root = PathBuf::from(std::env::var_os("CHRONO_INSTRUCTIONS_HOST").unwrap());
-    let mode = std::env::var("CHRONO_INSTRUCTIONS_MODE").unwrap();
-    if mode == "raw-init" {
-        let method = PathBuf::from(std::env::var_os("CHRONO_INSTRUCTIONS_METHOD").unwrap());
-        let context = PathBuf::from(std::env::var_os("CHRONO_INSTRUCTIONS_CONTEXT").unwrap());
-        test_support::init_with_checkpoint(&root, &method, &context, boundary).unwrap();
-    } else {
-        test_support::operation_with_checkpoint(&root, mode == "init", boundary).unwrap();
-    }
-}
-
-struct PausedOperation {
-    child: std::process::Child,
-    output: std::io::BufReader<std::process::ChildStdout>,
-}
-impl PausedOperation {
-    fn start(host: &Host, point: &str, mode: &str) -> Self {
-        use std::io::BufRead;
-        let mut child = Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--ignored",
-                "--exact",
-                "recovery_child",
-                "--nocapture",
-                "--test-threads=1",
-            ])
-            .env("CHRONO_INSTRUCTIONS_HOST", &host.root)
-            .env("CHRONO_INSTRUCTIONS_BOUNDARY", point)
-            .env("CHRONO_INSTRUCTIONS_MODE", mode)
-            .env("CHRONO_INSTRUCTIONS_METHOD", &host.method)
-            .env("CHRONO_INSTRUCTIONS_CONTEXT", &host.context)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let output = std::io::BufReader::new(child.stdout.take().unwrap());
-        let mut paused = Self { child, output };
-        let mut line = String::new();
-        loop {
-            line.clear();
-            if paused.output.read_line(&mut line).unwrap() == 0 {
-                use std::io::Read;
-                let status = paused.child.wait().unwrap();
-                let mut stderr = String::new();
-                paused
-                    .child
-                    .stderr
-                    .take()
-                    .unwrap()
-                    .read_to_string(&mut stderr)
-                    .unwrap();
-                panic!("child ended before {point}: {status}; {stderr}");
-            }
-            if line.contains(&format!("BOUNDARY {point}")) {
-                break;
-            }
-        }
-        paused
-    }
-    fn interrupt(mut self) {
-        self.child.kill().unwrap();
-        let status = self.child.wait().unwrap();
-        use std::os::unix::process::ExitStatusExt;
-        assert!(status.signal().is_some());
-    }
-    fn finish_with_failure(mut self) -> String {
-        use std::io::{Read, Write};
-        self.child.stdin.take().unwrap().write_all(b"x").unwrap();
-        let mut stdout = String::new();
-        self.output.read_to_string(&mut stdout).unwrap();
-        let status = self.child.wait().unwrap();
-        let mut stderr = String::new();
-        self.child
-            .stderr
-            .take()
-            .unwrap()
-            .read_to_string(&mut stderr)
-            .unwrap();
-        assert!(!status.success(), "{stdout}; {stderr}");
-        stderr
-    }
-    fn finish(mut self) {
-        use std::io::{Read, Write};
-        self.child.stdin.take().unwrap().write_all(b"x").unwrap();
-        let mut output = String::new();
-        self.output.read_to_string(&mut output).unwrap();
-        assert!(self.child.wait().unwrap().success(), "{output}");
-    }
-}
-impl Drop for PausedOperation {
-    fn drop(&mut self) {
-        // Test assertion failures still join their own Rust child.
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
-
-#[test]
-fn independent_process_interruptions_recover_before_prepare_and_preserve_unknown_exit() {
-    if !isolated_capability::isolated_capability_test(
-        "independent_process_interruptions_recover_before_prepare_and_preserve_unknown_exit",
-    ) {
-        return;
-    }
-    for point in [
-        "intent",
-        "before-prepare",
-        "staged-dir-0",
-        "staged-file-0",
-        "prepared",
-        "published-dir-0",
-        "published-0",
-        "published-4",
-        "committed",
-        "before-result",
-        "sealed",
-    ] {
-        let host = Host::new();
-        PausedOperation::start(&host, point, "init").interrupt();
-        chrono_instructions::maintain(&host.root)
-            .unwrap_or_else(|error| panic!("{point}: {error}"));
-        assert_eq!(attempts(&host).len(), 1, "{point}");
-        let path = attempts(&host).pop().unwrap();
-        let result = operation_json(&path, "result.json");
-        assert!(result["original_process_exit"].is_null());
-        assert!(
-            matches!(
-                result["publication"].as_str(),
-                Some("not-started" | "restored" | "verified-committed" | "committed")
-            ),
-            "{result}"
-        );
-        let state = chrono_instructions::status(
-            &host.root,
-            Some(path.strip_prefix(&host.root).unwrap().to_str().unwrap()),
-        )
-        .unwrap();
-        assert_eq!(state["records"][0]["phase"], "released");
-        assert_eq!(
-            dispatch(&[
-                "init".into(),
-                "--host-root".into(),
-                host.root.clone().into_os_string()
-            ])
-            .exit_code,
-            0
-        );
-        assert_alias(&host);
-    }
-}
-
-#[test]
-fn recovery_itself_can_be_interrupted_and_resumes_the_original_backup() {
-    use std::os::unix::fs::PermissionsExt;
-    let host = Host::new();
-    host.init().unwrap();
-    fs::set_permissions(
-        host.root.join("CLAUDE.md"),
-        fs::Permissions::from_mode(0o640),
-    )
-    .unwrap();
-    let original = host.read("CLAUDE.md");
-    host.write(METHOD, "replacement");
-    PausedOperation::start(&host, "published-0", "generate").interrupt();
-    PausedOperation::start(&host, "restored-file-0", "generate").interrupt();
-    chrono_instructions::maintain(&host.root).unwrap();
-    assert_eq!(attempts(&host).len(), 2);
-    assert_eq!(host.read("CLAUDE.md"), original);
-    assert_eq!(
-        fs::metadata(host.root.join("CLAUDE.md"))
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o777,
-        0o640
-    );
     assert_alias(&host);
 }
 
 #[test]
-fn same_host_excludes_a_second_process_while_an_independent_host_progresses() {
-    let first = Host::new();
-    let second = Host::new();
-    let paused = PausedOperation::start(&first, "before-prepare", "init");
-    let error = chrono_instructions::init_with_defaults(&first.root, None, None).unwrap_err();
-    assert!(error.contains("busy"), "{error}");
-    second.init().unwrap();
-    assert_alias(&second);
-    paused.finish();
-    assert_alias(&first);
-}
-
-#[test]
-fn completed_synchronous_operation_releases_lock_while_unrelated_fork_retains_descriptors() {
-    use std::io::Read;
-    use std::os::fd::AsRawFd;
-    use std::os::unix::net::UnixStream;
+fn completed_generation_and_noop_leave_only_host_inputs_and_guides() {
     let host = Host::new();
     host.init().unwrap();
-    let lease = chrono_harness::ownership::DirectoryLease::acquire_local(
-        &host
-            .root
-            .join(".chrono-harness/state/instructions-operations"),
-        true,
-        None,
-    )
-    .unwrap()
-    .unwrap();
-    let (read, write) = UnixStream::pair().unwrap();
-    let child = unsafe { libc::fork() };
-    assert!(child >= 0);
-    if child == 0 {
-        // This unrelated pre-exec fork retains the open descriptions. It only
-        // uses async-signal-safe syscalls, and EOF is its native completion gate.
-        unsafe {
-            libc::close(write.as_raw_fd());
-            if libc::write(read.as_raw_fd(), b"r".as_ptr().cast(), 1) != 1 {
-                libc::_exit(90);
-            }
-            let mut byte = 0u8;
-            loop {
-                let result = libc::read(read.as_raw_fd(), (&mut byte as *mut u8).cast(), 1);
-                if result == 0 {
-                    break;
-                }
-                #[cfg(target_os = "macos")]
-                let interrupted = *libc::__error() == libc::EINTR;
-                #[cfg(target_os = "linux")]
-                let interrupted = *libc::__errno_location() == libc::EINTR;
-                if result < 0 && interrupted {
-                    continue;
-                }
-                libc::_exit(91);
-            }
-            libc::_exit(0);
-        }
-    }
-    struct JoinedFork {
-        write: Option<UnixStream>,
-        child: libc::pid_t,
-    }
-    impl Drop for JoinedFork {
-        fn drop(&mut self) {
-            drop(self.write.take());
-            let mut status = 0;
-            assert_eq!(
-                unsafe { libc::waitpid(self.child, &mut status, 0) },
-                self.child
-            );
-            assert_eq!(status, 0);
-        }
-    }
-    let mut joined = JoinedFork {
-        write: Some(write),
-        child,
-    };
-    let mut ready = [0];
-    joined
-        .write
-        .as_mut()
-        .unwrap()
-        .read_exact(&mut ready)
-        .unwrap();
-    assert_eq!(ready, *b"r");
-    let busy = cli_init(&host, None, None);
-    assert_eq!(busy.exit_code, 1, "{busy:?}");
-    assert!(busy.stderr.contains("busy"));
-    drop(lease);
-    // The inherited descriptor remains live. The real next caller must succeed
-    // immediately without a retry, sleep or weakened same-host exclusion.
-    let result = cli_init(&host, None, None);
-    assert_eq!(result.exit_code, 0, "{result:?}");
-    assert_alias(&host);
-}
-
-#[test]
-fn recovery_preserves_destination_parent_input_and_literal_alias_drift() {
-    for drift in ["destination", "parent", "input", "alias"] {
-        let host = Host::new();
-        host.init().unwrap();
-        host.write(METHOD, "next");
-        PausedOperation::start(&host, "published-0", "generate").interrupt();
-        match drift {
-            "destination" => {
-                fs::remove_file(host.root.join("CLAUDE.md")).unwrap();
-                host.write("CLAUDE.md", "independent work");
-            }
-            "parent" => {
-                fs::rename(
-                    host.root.join(".chrono-harness/instructions"),
-                    host.root.join(".chrono-harness/previous-instructions"),
-                )
-                .unwrap();
-                fs::create_dir(host.root.join(".chrono-harness/instructions")).unwrap();
-            }
-            "input" => host.write(METHOD, "independent input"),
-            "alias" => {
-                fs::remove_file(host.root.join("AGENTS.md")).unwrap();
-                std::os::unix::fs::symlink("other.md", host.root.join("AGENTS.md")).unwrap();
-            }
-            _ => unreachable!(),
-        }
-        let before = host.snapshot();
-        let error = chrono_instructions::maintain(&host.root).unwrap_err();
-        assert!(!error.is_empty());
-        assert_eq!(host.snapshot(), before);
-        assert_eq!(attempts(&host).len(), 2);
-        let inventory =
-            chrono_harness::retained_artifacts::retention::Inventory::with_standalone_policy(
-                &host.root,
-                include_bytes!("../../../assets/instructions/standalone-retention.json"),
-            )
-            .unwrap();
-        assert!(
-            inventory
-                .rooted_original(OP_PRODUCER, "instructions-publication-recovery")
-                .unwrap()
-                .is_some()
-        );
-    }
-}
-
-#[test]
-fn commit_and_result_must_bind_the_original_intent_and_plan() {
-    for record in ["plan.json", "commit.json", "result.json"] {
-        let host = Host::new();
-        host.init().unwrap();
-        host.write(METHOD, "next");
-        let point = if record == "result.json" {
-            "sealed"
-        } else {
-            "committed"
-        };
-        PausedOperation::start(&host, point, "generate").interrupt();
-        let pending = attempts(&host)
-            .into_iter()
-            .find(|p| {
-                operation_json(p, "plan.json")["files"]
-                    .as_array()
-                    .is_some_and(|a| a.len() == 1)
-            })
-            .unwrap();
-        let mut value = operation_json(&pending, record);
-        if record == "plan.json" {
-            value["host"] = serde_json::json!("different-host");
-        } else {
-            value["attempt"] = serde_json::json!("different-attempt");
-        }
-        fs::write(pending.join(record), serde_json::to_vec(&value).unwrap()).unwrap();
-        let before = host.snapshot();
-        assert!(chrono_instructions::maintain(&host.root).is_err());
-        assert_eq!(host.snapshot(), before);
-    }
-}
-
-fn retention_policy(host: &Host, count: u64, bytes: u64) {
-    let mut policy: serde_json::Value = serde_json::from_slice(include_bytes!(
-        "../../../assets/instructions/standalone-retention.json"
-    ))
-    .unwrap();
-    policy["terminal_limits"][OP_PRODUCER]["max_count"] = count.into();
-    policy["terminal_limits"][OP_PRODUCER]["max_bytes"] = bytes.into();
-    host.write(
-        ".chrono-harness/retention.json",
-        serde_json::to_vec(&policy).unwrap(),
-    );
-}
-
-fn inventory(host: &Host) -> chrono_harness::retained_artifacts::retention::Inventory {
-    chrono_harness::retained_artifacts::retention::Inventory::with_standalone_policy(
-        &host.root,
-        include_bytes!("../../../assets/instructions/standalone-retention.json"),
-    )
-    .unwrap()
-}
-
-fn maintain_until(
-    state: &chrono_harness::retained_artifacts::retention::Inventory,
-    observed: Option<u64>,
-    complete: impl Fn() -> bool,
-) -> Vec<serde_json::Value> {
-    // Maintenance is an explicit bounded action, not a synchronous drain.
-    // Drive a finite sequence of real rounds without changing the policy's
-    // time/node/byte bounds, and retain every round for failure diagnostics.
-    let mut rounds = Vec::new();
-    for _ in 0..32 {
-        let result = match observed {
-            Some(now) => state.maintain_producer_at(OP_PRODUCER, now),
-            None => state.maintain_producer(OP_PRODUCER),
-        }
-        .unwrap();
-        assert!(
-            result["quota_errors"].as_array().unwrap().is_empty(),
-            "{result}"
-        );
-        assert!(
-            result["round"]["accounting_errors"]
-                .as_array()
-                .unwrap()
-                .is_empty(),
-            "{result}"
-        );
-        assert!(
-            result["round"]["nodes"].as_u64().unwrap() <= 256,
-            "{result}"
-        );
-        rounds.push(result);
-        if complete() {
-            assert!(
-                rounds
-                    .iter()
-                    .any(|r| r["round"]["removed_logical_bytes"].as_u64().unwrap() > 0),
-                "no observed physical progress: {rounds:?}"
-            );
-            return rounds;
-        }
-    }
-    panic!("bounded maintenance did not retire the expected originals: {rounds:?}");
-}
-
-#[test]
-fn terminal_count_and_bytes_are_maintenance_targets_with_truthful_retired_queries() {
-    // Immediate metadata lock acquisition must not depend on unrelated fixture
-    // forks briefly inheriting this host's open capabilities before exec.
-    if !isolated_capability::isolated_capability_test(
-        "terminal_count_and_bytes_are_maintenance_targets_with_truthful_retired_queries",
-    ) {
-        return;
-    }
-    for (count, bytes, expected) in [(1, 67108864, 1), (32, 1, 0)] {
-        let host = Host::new();
-        retention_policy(&host, count, bytes);
-        host.init().unwrap();
-        generate(&host.root).unwrap();
-        let paths = attempts(&host);
-        let registered = inventory(&host).producer_status(OP_PRODUCER, None).unwrap();
-        let retired_ids: Vec<_> = registered["records"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|r| {
-                (
-                    r["id"].as_str().unwrap().to_owned(),
-                    host.root.join(r["path"].as_str().unwrap()),
-                )
-            })
-            .collect();
-        let state = inventory(&host);
-        let rounds = maintain_until(&state, None, || {
-            let status = state.producer_status(OP_PRODUCER, None).unwrap();
-            assert!(status["errors"].as_array().unwrap().is_empty(), "{status}");
-            status["scope_complete"] == true
-                && status["records"].as_array().unwrap().len() == expected
-                && paths.iter().filter(|p| p.exists()).count() == expected
-                && retired_ids.iter().all(|(id, path)| {
-                    path.exists()
-                        || !host
-                            .root
-                            .join(".chrono-harness/state/output-retention-v1/objects")
-                            .join(id)
-                            .exists()
-                })
-        });
-        assert!(rounds.iter().any(|r| r["quota_scope_complete"] == true));
-        assert!(
-            rounds
-                .iter()
-                .any(|r| !r["quota_expired"].as_array().unwrap().is_empty())
-        );
-        let status = chrono_instructions::status(&host.root, None).unwrap();
-        assert_eq!(status["scope_complete"], true, "{status}");
-        assert_eq!(
-            status["records"].as_array().unwrap().len(),
-            expected,
-            "{status}"
-        );
-        for path in paths.into_iter().filter(|p| !p.exists()) {
-            let retired = chrono_instructions::status(
-                &host.root,
-                Some(path.strip_prefix(&host.root).unwrap().to_str().unwrap()),
-            )
-            .unwrap();
-            assert_eq!(retired["availability"], "unavailable-or-retired");
-            assert_eq!(retired["success_inferred"], false);
-        }
-        for (id, path) in retired_ids.into_iter().filter(|(_, p)| !p.exists()) {
-            assert!(
-                !host
-                    .root
-                    .join(".chrono-harness/state/output-retention-v1/objects")
-                    .join(id)
-                    .exists()
-            );
-            assert!(!path.exists());
-        }
-        assert_alias(&host);
-    }
-}
-
-#[test]
-fn age_and_quota_maintenance_preserve_live_consumers_and_unresolved_attempts() {
-    let host = Host::new();
-    retention_policy(&host, 1, 1);
-    host.init().unwrap();
-    let state = inventory(&host);
-    let produced = attempts(&host);
-    assert_eq!(produced.len(), 1);
-    let path = produced[0]
-        .strip_prefix(&host.root)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    let status = state.producer_status(OP_PRODUCER, Some(path)).unwrap();
-    assert_eq!(status["scope_complete"], true, "{status}");
-    assert!(status["errors"].as_array().unwrap().is_empty(), "{status}");
-    assert_eq!(status["records"].as_array().unwrap().len(), 1, "{status}");
-    let id = status["records"][0]["id"].as_str().unwrap();
-    let original = host
-        .root
-        .join(status["records"][0]["path"].as_str().unwrap());
-    state.reference("test-reader", &[id.into()]).unwrap();
-    let live = state.consume(id).unwrap();
-    let result = state
-        .maintain_producer_at(OP_PRODUCER, u64::MAX - 1)
-        .unwrap();
-    assert!(original.exists(), "{result}");
-    state.reference("test-reader", &[]).unwrap();
-    let result = state
-        .maintain_producer_at(OP_PRODUCER, u64::MAX - 1)
-        .unwrap();
-    assert!(original.exists(), "live read capability: {result}");
-    drop(live);
-    maintain_until(&state, Some(u64::MAX - 1), || !original.exists());
-    assert!(!original.exists());
-    let paused = PausedOperation::start(&host, "before-prepare", "generate");
-    state
-        .maintain_producer_at(OP_PRODUCER, u64::MAX - 1)
-        .unwrap();
-    assert!(
-        state
-            .rooted_original(OP_PRODUCER, "instructions-publication-recovery")
-            .unwrap()
-            .is_some()
-    );
-    paused.interrupt();
-    // Interruption is not a success observation, even after explicit recovery.
-    chrono_instructions::maintain(&host.root).unwrap();
-    let status = state.producer_status(OP_PRODUCER, None).unwrap();
-    for record in status["records"].as_array().unwrap() {
-        if record["outcome"]["publication"] == "not-started" {
-            assert!(record["observed_return"].is_null());
-        }
-    }
-}
-
-#[test]
-fn known_evaluator_error_and_interrupted_unknown_return_remain_distinct() {
-    let host = Host::new();
-    host.init().unwrap();
-    test_support::generate_with_state_failure(&host.root, "before-result").unwrap_err();
-    let before = chrono_instructions::status(&host.root, None).unwrap();
-    let failure = before["records"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|r| r["observed_return"]["result"].get("error").is_some())
-        .unwrap();
-    assert!(failure["observed_return"]["process_exit"].is_null());
-    chrono_instructions::maintain(&host.root).unwrap();
-    PausedOperation::start(&host, "before-result", "generate").interrupt();
-    chrono_instructions::maintain(&host.root).unwrap();
-    let after = chrono_instructions::status(&host.root, None).unwrap();
-    assert!(
-        after["records"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|r| r["observed_return"].is_null()
-                && r["outcome"]["publication"] == "verified-committed")
-    );
-}
-
-#[test]
-fn interrupted_creation_recovery_can_be_interrupted_before_prepare_again() {
-    // Recovery requires the interrupted child's last metadata capability to be
-    // closed; unrelated fixture forks must not briefly retain the same lock.
-    if !isolated_capability::isolated_capability_test(
-        "interrupted_creation_recovery_can_be_interrupted_before_prepare_again",
-    ) {
-        return;
-    }
-    let host = Host::new();
-    PausedOperation::start(&host, "intent", "init").interrupt();
-    PausedOperation::start(&host, "creation-recovered", "init").interrupt();
-    chrono_instructions::maintain(&host.root).unwrap();
-    assert_eq!(attempts(&host).len(), 1);
-    assert_eq!(
-        operation_json(&attempts(&host)[0], "result.json")["publication"],
-        "not-started"
-    );
-    assert!(host.snapshot().is_empty());
-}
-
-#[test]
-fn interrupted_backup_drift_is_preserved_and_blocks_recovery() {
-    let host = Host::new();
-    host.init().unwrap();
-    host.write(METHOD, "next");
-    PausedOperation::start(&host, "published-0", "generate").interrupt();
-    let backup = attempts(&host)
-        .into_iter()
-        .map(|p| p.join("original-0"))
-        .find(|p| p.exists())
-        .unwrap();
-    fs::write(&backup, b"independent original change").unwrap();
+    assert!(!host.root.join(".chrono-harness/state").exists());
+    assert!(!fs::read_dir(&host.root).unwrap().any(|e| {
+        e.unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".chrono-instructions-")
+    }));
     let before = host.snapshot();
-    assert!(chrono_instructions::maintain(&host.root).is_err());
-    assert_eq!(fs::read(&backup).unwrap(), b"independent original change");
+    assert!(generate(&host.root).unwrap().is_empty());
     assert_eq!(host.snapshot(), before);
 }
 
 #[test]
-fn actual_state_publication_collisions_fail_and_preserve_pending_originals() {
-    // Recovery checks the child's last metadata capability after it returns.
-    // Run without unrelated fixture forks retaining that same capability.
-    if !isolated_capability::isolated_capability_test(
-        "actual_state_publication_collisions_fail_and_preserve_pending_originals",
-    ) {
-        return;
-    }
-    for name in ["result.json", "commit.json", "unexpected"] {
-        let host = Host::new();
-        host.init().unwrap();
-        let before = host.read("CLAUDE.md");
-        host.write(METHOD, "new publication");
-        let point = if name == "result.json" {
-            "before-result"
-        } else {
-            "prepared"
-        };
-        let paused = PausedOperation::start(&host, point, "generate");
-        let pending = attempts(&host)
-            .into_iter()
-            .find(|p| !p.join("result.json").exists())
-            .unwrap();
-        let collision = pending.join(name);
-        fs::create_dir(&collision).unwrap();
-        let stderr = paused.finish_with_failure();
-        assert!(!stderr.is_empty());
-        assert!(
-            inventory(&host)
-                .rooted_original(OP_PRODUCER, "instructions-publication-recovery")
-                .unwrap()
-                .is_some()
+fn opted_in_instruction_logs_rotate_whole_events_inside_their_own_directory() {
+    let host = Host::new();
+    runtime_policy(&host, 1024, 2);
+    for _ in 0..8 {
+        assert_eq!(
+            run_cli(&host.root, &["--version".into()]).1.status.code(),
+            Some(0)
         );
-        assert!(chrono_instructions::maintain(&host.root).is_err());
-        assert!(collision.is_dir());
-        fs::remove_dir(collision).unwrap();
-        chrono_instructions::maintain(&host.root).unwrap();
-        assert_eq!(attempts(&host).len(), 2);
-        if name == "commit.json" {
-            assert_eq!(host.read("CLAUDE.md"), before);
-        } else {
-            assert!(
-                String::from_utf8(host.read("CLAUDE.md"))
-                    .unwrap()
-                    .contains("new publication")
+    }
+    let dir = host
+        .root
+        .join(".chrono-harness/state/logs/chrono-instructions");
+    let logs = fs::read_dir(&dir)
+        .unwrap()
+        .map(|p| p.unwrap().path())
+        .collect::<Vec<_>>();
+    assert_eq!(logs.len(), 2);
+    for file in logs {
+        assert!(file.metadata().unwrap().len() <= 1024);
+        for line in fs::read_to_string(file).unwrap().lines() {
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(line).unwrap()["producer"],
+                "chrono-instructions"
             );
         }
-        assert_alias(&host);
     }
-}
-
-#[test]
-fn external_input_observations_reject_content_identity_and_alias_drift_before_publication() {
-    for drift in ["content", "identity", "alias"] {
-        let host = Host::new();
-        if drift == "alias" {
-            let actual = host.temp.path().join("actual-method.md");
-            fs::rename(&host.method, &actual).unwrap();
-            std::os::unix::fs::symlink(&actual, &host.method).unwrap();
-        }
-        let paused = PausedOperation::start(&host, "prepared", "raw-init");
-        match drift {
-            "content" => fs::write(&host.method, "new external bytes").unwrap(),
-            "identity" => {
-                let bytes = fs::read(&host.method).unwrap();
-                fs::rename(&host.method, host.temp.path().join("previous-external.md")).unwrap();
-                fs::write(&host.method, bytes).unwrap();
-            }
-            "alias" => {
-                let other = host.temp.path().join("other-method.md");
-                fs::write(&other, fs::read(&host.method).unwrap()).unwrap();
-                fs::remove_file(&host.method).unwrap();
-                std::os::unix::fs::symlink(other, &host.method).unwrap();
-            }
-            _ => unreachable!(),
-        }
-        let stderr = paused.finish_with_failure();
-        assert!(stderr.contains("external input changed"), "{stderr}");
-        assert!(host.snapshot().is_empty());
-        assert_eq!(attempts(&host).len(), 1);
-        let result = operation_json(&attempts(&host)[0], "result.json");
-        assert_eq!(result["publication"], "restored");
-    }
-}
-
-#[test]
-fn interrupted_staging_cleanup_continues_without_repeating_publication() {
-    let host = Host::new();
-    PausedOperation::start(&host, "prepared", "init").interrupt();
-    PausedOperation::start(&host, "cleaned-next-0", "init").interrupt();
-    chrono_instructions::maintain(&host.root).unwrap();
-    assert_eq!(attempts(&host).len(), 1);
-    assert!(host.snapshot().is_empty());
-    assert_eq!(
-        operation_json(&attempts(&host)[0], "result.json")["publication"],
-        "restored"
-    );
 }

@@ -1,19 +1,47 @@
 use std::io::{self, Write};
 use std::process::ExitCode;
 
-fn run() -> u8 {
-    let result = chrono_instructions::dispatch(&std::env::args_os().skip(1).collect::<Vec<_>>());
-    if !result.stderr.is_empty() {
-        chrono_diagnostics::runtime::diagnostic(result.stderr.trim_end());
-    }
-    if io::stdout().write_all(result.stdout.as_bytes()).is_err()
-        || io::stderr().write_all(result.stderr.as_bytes()).is_err()
-    {
-        return 1;
-    }
-    result.exit_code
-}
+mod log;
 
 fn main() -> ExitCode {
-    ExitCode::from(chrono_diagnostics::runtime::cli("chrono-instructions", run))
+    let args = std::env::args_os().skip(1).collect::<Vec<_>>();
+    let logger = match log::Log::for_args(&args) {
+        Ok(logger) => logger,
+        Err(error) => {
+            log::diagnostic("E_LOG_CONFIG", &error, None);
+            return ExitCode::from(2);
+        }
+    };
+    let mut log_error = logger
+        .as_ref()
+        .and_then(|writer| writer.event("cli.started", None, None).err());
+    let result = chrono_instructions::dispatch(&args);
+    if let Some(writer) = &logger {
+        if !result.stderr.is_empty() {
+            let error = writer
+                .event("cli.diagnostic", Some(result.stderr.trim_end()), None)
+                .err();
+            log_error = log_error.or(error);
+        }
+        let error = writer
+            .event("cli.finished", None, Some(result.exit_code))
+            .err();
+        log_error = log_error.or(error);
+    }
+    if io::stdout()
+        .lock()
+        .write_all(result.stdout.as_bytes())
+        .is_err()
+        || io::stderr()
+            .lock()
+            .write_all(result.stderr.as_bytes())
+            .is_err()
+    {
+        return ExitCode::from(1);
+    }
+    if let Some(error) = log_error {
+        log::diagnostic("E_LOG_WRITE", &error.to_string(), Some(result.exit_code));
+        return ExitCode::from(2);
+    }
+    ExitCode::from(result.exit_code)
 }
