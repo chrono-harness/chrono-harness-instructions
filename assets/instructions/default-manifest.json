@@ -29,6 +29,7 @@
         "delta.candidate-judge",
         "delta.local-ci",
         "test.behavior",
+        "test.external-commands",
         "test.same-language",
         "evidence.program-state",
         "job.wait",
