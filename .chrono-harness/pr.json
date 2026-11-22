@@ -1,7 +1,7 @@
 {
   "schema": "chrono-pr-config/v3",
   "repository": "chrono-harness/chrono-harness-instructions",
-  "base": "main",
+  "base": "dev",
   "gh": "gh",
   "required_checks": [
     "check"
