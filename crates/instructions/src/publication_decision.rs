@@ -1,31 +1,10 @@
-//! Recovery decisions shared by the runtime and the proof.
+//! Decide which exact outputs may be restored after an in-flight generation failure.
 #[cfg(not(verus_keep_ghost))]
 use verus_builtin_macros::verus;
 #[cfg(verus_keep_ghost)]
 use vstd::prelude::*;
 
 verus! {
-
-pub enum IntentLayer { Done, Original, Intent, Invalid }
-
-pub fn intent_layer(schema: bool, original: bool, intent: bool) -> (layer: IntentLayer)
-    ensures
-        (layer is Done) == schema,
-        (layer is Original) == (!schema && original),
-        (layer is Intent) == (!schema && !original && intent),
-        (layer is Invalid) == (!schema && !original && !intent),
-{
-    if schema { IntentLayer::Done }
-    else if original { IntentLayer::Original }
-    else if intent { IntentLayer::Intent }
-    else { IntentLayer::Invalid }
-}
-
-pub fn record_bound(identity: bool, attempt: bool, digest: bool) -> (bound: bool)
-    ensures bound == (identity && attempt && digest),
-{
-    identity && attempt && digest
-}
 
 pub enum Repair {
     Leave,
@@ -47,12 +26,6 @@ pub fn repair(before: bool, installed: bool, backup_ready: bool, committed: bool
     } else {
         Repair::Preserve
     }
-}
-
-pub fn can_release(sealed: bool, result_bound: bool, resolved: bool) -> (release: bool)
-    ensures release == (sealed && result_bound && resolved),
-{
-    sealed && result_bound && resolved
 }
 
 }

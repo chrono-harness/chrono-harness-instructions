@@ -3,6 +3,7 @@ name = "chrono-instructions"
 version = "0.1.0"
 edition = "2024"
 publish = false
+autotests = false
 description = "Explicit, preserving host instruction generation"
 
 [lints.rust]
@@ -19,12 +20,23 @@ test = false
 bench = false
 
 [features]
-test-support = ["chrono-harness/retention-test"]
+test-support = []
 
 [dependencies]
-chrono-diagnostics = { git = "https://github.com/chrono-harness/chrono-harness-diagnostics.git", rev = "8da697ff878dbe2e31ddcfe7366714de49e79d03" }
+file-rotate = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-chrono-harness = { git = "https://github.com/chrono-harness/chrono-harness-runner.git", rev = "5c9364711a47ab45242195f11ca350e5d2b858cf" }
+rustix = { version = "1", features = ["fs"] }
+tempfile = "3"
+sha2 = "0.10"
 verus_builtin_macros = "=0.0.0-2026-04-20-1748"
 libc = "0.2"
+
+[[test]]
+name = "generation"
+path = "tests/generation.rs"
+required-features = ["test-support"]
+
+[[test]]
+name = "publication_decision"
+path = "tests/publication_decision.rs"
