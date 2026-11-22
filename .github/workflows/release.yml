@@ -47,7 +47,15 @@ jobs:
         run: |
           set -euo pipefail
           cargo build --release --locked --manifest-path crates/instructions/Cargo.toml
-          "$CARGO_TARGET_DIR/release/chrono-instructions" --help
+          binary="$CARGO_TARGET_DIR/release/chrono-instructions"
+          "$binary" --help
+          host="$RUNNER_TEMP/guide"
+          mkdir -p "$host/.chrono-harness"
+          echo '{"mode":"off"}' > "$host/.chrono-harness/rules.json"
+          echo 'Local setup.' > "$host/CLAUDE.md"
+          "$binary" sync-rules --host-root "$host"
+          test "$(readlink "$host/AGENTS.md")" = CLAUDE.md
+          grep -Fx 'Local setup.' "$host/AGENTS.md"
           mkdir "$RUNNER_TEMP/dist"
           cp "$CARGO_TARGET_DIR/release/chrono-instructions" "$RUNNER_TEMP/dist/chrono-instructions-$PLATFORM"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

@@ -105,7 +105,13 @@ pub(super) fn read(
     root: &Path,
     fetch: impl FnOnce() -> Result<Vec<u8>, String>,
 ) -> Result<String, String> {
-    let selection = Selection::read(root)?;
+    read_selected(Selection::read(root)?, fetch)
+}
+
+fn read_selected(
+    selection: Selection,
+    fetch: impl FnOnce() -> Result<Vec<u8>, String>,
+) -> Result<String, String> {
     if matches!(&selection, Selection::Off)
         || matches!(&selection, Selection::Only { include } if include.is_empty())
     {
@@ -130,6 +136,60 @@ pub(super) fn read(
         }
     }
     Ok(result)
+}
+
+/// Publish a materialized guide while preserving host text and the literal root alias.
+pub(super) fn sync(
+    host: &Path,
+    fetch: impl FnOnce() -> Result<Vec<u8>, String>,
+) -> Result<Vec<std::path::PathBuf>, String> {
+    use super::{BEGIN, END, Fault, MANIFEST, RESERVED, metadata, regular, transaction};
+    use std::collections::BTreeMap;
+
+    transaction::run(host, Fault::default(), |root| {
+        super::parents(root, MANIFEST, &mut BTreeSet::new())?;
+        if metadata(&root.join(MANIFEST))?.is_some() {
+            return Err("host uses a local instruction manifest; use generate".into());
+        }
+        let selected = regular(&root.join(CONFIG))?;
+        let selection = match &selected {
+            Some(input) => serde_json::from_slice(&input.bytes)
+                .map_err(|error| format!("{CONFIG}: {error}"))?,
+            None => Selection::All {
+                exclude: BTreeSet::new(),
+            },
+        };
+        let text = read_selected(selection, fetch)?;
+        if text
+            .as_bytes()
+            .windows(RESERVED.len())
+            .any(|w| w == RESERVED)
+        {
+            return Err("upstream rules contain reserved guide delimiters".into());
+        }
+        let mut block = BEGIN.to_vec();
+        block.push(b'\n');
+        block.extend_from_slice(text.as_bytes());
+        block.extend_from_slice(END);
+        let mut changes = vec![];
+        let alias = super::root_guides(root, &block, &mut changes)?;
+        let mut observed = BTreeMap::new();
+        if let Some(snapshot) = &selected {
+            observed.insert(CONFIG.to_owned(), transaction::sha256(&snapshot.bytes));
+        }
+        let mut bindings = transaction::bind_inputs(
+            root,
+            observed,
+            changes.iter().filter(|change| change.unchanged()).collect(),
+            alias,
+        )?;
+        if selected.is_none() {
+            bindings.require_absent(CONFIG);
+        }
+        bindings.require_absent(MANIFEST);
+        changes.retain(|change| !change.unchanged());
+        Ok((changes, vec![], bindings))
+    })
 }
 
 pub(super) fn fetch() -> Result<Vec<u8>, String> {
