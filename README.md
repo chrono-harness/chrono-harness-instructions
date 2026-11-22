@@ -13,3 +13,20 @@
 从[本工具的发行页](https://github.com/chrono-harness/chrono-harness-instructions/releases)选定标签，下载对应平台的二进制和 `SHA256SUMS`，验算 SHA-256 后安装为工作树外的 `chrono-instructions`。升级和回退按所需标签独立替换该二进制。
 
 本仓贡献者可以单独安装 [chrono-pr v0.1.0-alpha.2](https://github.com/chrono-harness/chrono-harness-pr/releases/tag/v0.1.0-alpha.2)，从仓库根目录使用 `pr-open`、`pr-status` 和 `pr-reminders` 跟进变更。仓库、分支和检查名登记在 `.chrono-harness/pr.json`。
+
+## 继承上游规则
+
+在仓库根目录运行 `chrono-instructions rules --host-root .`。命令每次读取上游最近一次通过检查后发布的数据，将本仓接纳的规则和 ID 写到标准输出。仓库的 `CLAUDE.md` 保存本地追加说明，`AGENTS.md` 可链接到它。读取规则需要 HTTPS 和 curl。上游暂不可用时命令返回错误；本地说明仍在仓库内。
+
+缺省时接纳全部上游基础规则，包括今后新增的 ID。需要定制时，在本仓 `.chrono-harness/rules.json` 选择一种写法。
+
+| 选择 | 文件内容 |
+| --- | --- |
+| 接纳全部 | `{"mode":"all"}` |
+| 接纳全部，屏蔽指定规则 | `{"mode":"all","exclude":["job.wait"]}` |
+| 只接纳指定规则 | `{"mode":"only","include":["job.wait","artifact.cleanup"]}` |
+| 关闭上游规则 | `{"mode":"off"}` |
+
+选择按完整 ID 匹配。上游修改同一 ID 的文字会随下次读取生效。已移除的 ID 自动失效。关闭和空白名单均可离线使用。可在[公共规则数据](https://raw.githubusercontent.com/chrono-harness/chrono-harness-instructions/published-rules/rules.json)查看当前可选 ID。
+
+上游维护者修改产品的 catalog 或默认 manifest 后，dev 的检查通过即自动发布规则。下游无需更新二进制、模板或提交。维护自己完整登记的项目也可继续使用 init 和 generate。

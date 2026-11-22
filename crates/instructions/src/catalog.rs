@@ -361,6 +361,37 @@ impl Catalog {
             })
             .collect()
     }
+    fn selected_atoms(&self, output: &Output) -> Result<Vec<&Atom>, String> {
+        let atoms: BTreeMap<_, _> = self.atoms.iter().map(|a| (a.id.as_str(), a)).collect();
+        let mut order = Vec::new();
+        let mut visited = BTreeSet::new();
+        for root in &output.roots {
+            visit(root, &atoms, &mut visited, &mut Vec::new(), &mut order)
+                .map_err(|e| format!("output {}: {e}", output.id))?;
+        }
+        Ok(order)
+    }
+
+    pub fn ordered_rule_ids(&self, output: &Output) -> Result<Vec<&str>, String> {
+        if let Some(id) = &output.layout {
+            let layout = self
+                .layouts
+                .iter()
+                .find(|layout| layout.id == *id)
+                .ok_or_else(|| format!("unknown layout {id}"))?;
+            return Ok(layout
+                .sections
+                .iter()
+                .flat_map(|s| s.atoms.iter().map(String::as_str))
+                .collect());
+        }
+        Ok(self
+            .selected_atoms(output)?
+            .into_iter()
+            .map(|a| a.id.as_str())
+            .collect())
+    }
+
     pub fn compose(
         &self,
         output: &Output,
@@ -376,13 +407,7 @@ impl Catalog {
                     output.id, output.locale
                 )
             })?;
-        let atoms: BTreeMap<_, _> = self.atoms.iter().map(|a| (a.id.as_str(), a)).collect();
-        let mut order = Vec::new();
-        let mut visited = BTreeSet::new();
-        for root in &output.roots {
-            visit(root, &atoms, &mut visited, &mut Vec::new(), &mut order)
-                .map_err(|e| format!("output {}: {e}", output.id))?;
-        }
+        let order = self.selected_atoms(output)?;
         let mut parts = Vec::new();
         let mut bodies = BTreeMap::new();
         for atom in order {

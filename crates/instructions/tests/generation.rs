@@ -1402,3 +1402,57 @@ fn opted_in_instruction_logs_rotate_whole_events_inside_their_own_directory() {
         }
     }
 }
+
+#[test]
+fn live_rule_selection_follows_upstream_and_preserves_local_work() {
+    let host = tempfile::tempdir().unwrap();
+    let path = host.path().join(".chrono-harness/rules.json");
+    fs::create_dir(path.parent().unwrap()).unwrap();
+    fs::write(host.path().join("CLAUDE.md"), "Local additions.").unwrap();
+    let fetch = |rules: &[(&str, &str)]| {
+        serde_json::to_vec(&serde_json::json!({
+            "schema": "chrono-agent-rules/v1", "notice": "Source",
+            "rules": rules.iter().map(|(id,text)| serde_json::json!({"id":id,"text":text})).collect::<Vec<_>>()
+        })).unwrap()
+    };
+    let old = [("first", "old")];
+    let new = [("first", "edited"), ("next", "added")];
+    let load = |entries: &[(&str, &str)]| {
+        chrono_instructions::test_support::read_rules(host.path(), || Ok(fetch(entries))).unwrap()
+    };
+    assert!(load(&old).contains("old"));
+    let all = load(&new);
+    assert!(all.contains("edited") && all.contains("added") && !all.contains("old"));
+    fs::write(&path, r#"{"mode":"all","exclude":["first"]}"#).unwrap();
+    assert!(load(&new).contains("added") && !load(&new).contains("edited"));
+    fs::write(&path, r#"{"mode":"only","include":["first"]}"#).unwrap();
+    assert!(load(&new).contains("edited") && !load(&new).contains("added"));
+    for disabled in [r#"{"mode":"off"}"#, r#"{"mode":"only","include":[]}"#] {
+        fs::write(&path, disabled).unwrap();
+        assert_eq!(
+            chrono_instructions::test_support::read_rules(host.path(), || panic!("network"))
+                .unwrap(),
+            ""
+        );
+    }
+    fs::write(&path, r#"{"mode":"all","include":["first"]}"#).unwrap();
+    assert!(
+        chrono_instructions::test_support::read_rules(host.path(), || panic!("network")).is_err()
+    );
+    fs::remove_file(&path).unwrap();
+    assert!(
+        chrono_instructions::test_support::read_rules(host.path(), || Err("offline".into()))
+            .is_err()
+    );
+    assert!(
+        chrono_instructions::test_support::read_rules(host.path(), || Ok(fetch(&[
+            ("first", "a"),
+            ("first", "b")
+        ])))
+        .is_err()
+    );
+    assert_eq!(
+        fs::read_to_string(host.path().join("CLAUDE.md")).unwrap(),
+        "Local additions."
+    );
+}

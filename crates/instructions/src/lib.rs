@@ -1,6 +1,7 @@
 //! Explicit host instruction generation. No judge execution or host discovery.
 
 mod catalog;
+mod inherit;
 #[doc(hidden)]
 pub mod publication_decision;
 mod transaction;
@@ -691,6 +692,13 @@ fn run_generate(host: &Path, fault: Fault) -> Result<Vec<PathBuf>, String> {
 /// Bounded IO-failure injection available only in the dedicated test build.
 #[cfg(feature = "test-support")]
 pub mod test_support {
+    pub fn read_rules(
+        root: &std::path::Path,
+        fetch: impl FnOnce() -> Result<Vec<u8>, String>,
+    ) -> Result<String, String> {
+        super::inherit::read(root, fetch)
+    }
+
     use super::*;
 
     pub fn generate_with_failure(
@@ -762,10 +770,23 @@ pub fn dispatch(args: &[OsString]) -> CliOutput {
         stdout,
         stderr,
     };
+    let rule_result = match args {
+        [op] if op == "publish-rules" => Some(inherit::publish()),
+        [op, flag, host] if op == "rules" && flag == "--host-root" => {
+            Some(inherit::read(Path::new(host), inherit::fetch))
+        }
+        _ => None,
+    };
+    if let Some(result) = rule_result {
+        return match result {
+            Ok(text) => reply(0, text, String::new()),
+            Err(error) => reply(1, String::new(), format!("E_RULES: {error}\n")),
+        };
+    }
     if args.is_empty()
         || (args.len() == 1 && ["help", "--help", "-h"].iter().any(|a| args[0] == *a))
     {
-        return reply(0, "Usage:\n  chrono-instructions init --host-root H [--methodology M] [--host-context C] [--locale L]\n  chrono-instructions generate --host-root H\nH must be an existing directory. New init adopts embedded atomic rules (zh-CN default) and empty context. --locale binds the fresh root; --methodology retains one opaque file atom (und unless explicitly bound). Registered init retains existing canonical sources for omitted options; explicit differing inputs fail. Optional M/C must be readable UTF-8 regular files. Edit the registered catalog and output plan, then generate root guides, Markdown and skills. AGENTS.md -> CLAUDE.md remains a literal relative alias. Unix only. No host inference or runtime checkout required. Exit 0 complete, 2 usage, 1 generation/IO failure. No judges run.\n".into(), String::new());
+        return reply(0, "Usage:\n  chrono-instructions rules --host-root H\n  chrono-instructions publish-rules\n  chrono-instructions init --host-root H [--methodology M] [--host-context C] [--locale L]\n  chrono-instructions generate --host-root H\nH must be an existing directory. New init adopts embedded atomic rules (zh-CN default) and empty context. --locale binds the fresh root; --methodology retains one opaque file atom (und unless explicitly bound). Registered init retains existing canonical sources for omitted options; explicit differing inputs fail. Optional M/C must be readable UTF-8 regular files. Edit the registered catalog and output plan, then generate root guides, Markdown and skills. AGENTS.md -> CLAUDE.md remains a literal relative alias. Unix only. No host inference or runtime checkout required. Exit 0 complete, 2 usage, 1 generation/IO failure. No judges run.\n".into(), String::new());
     }
     if args.len() == 1 && args[0] == "--version" {
         return reply(
