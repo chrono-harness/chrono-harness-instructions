@@ -1,1 +1,3 @@
 target/
+.chrono-harness/pr-reminders.sqlite3*
+/.chrono-instructions-*/
