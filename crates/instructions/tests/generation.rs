@@ -1456,3 +1456,40 @@ fn live_rule_selection_follows_upstream_and_preserves_local_work() {
         "Local additions."
     );
 }
+
+#[test]
+fn root_guides_follow_published_selection_without_losing_host_text() {
+    use chrono_instructions::test_support::sync_rules;
+    let h = tempfile::tempdir().unwrap();
+    let guide = h.path().join("CLAUDE.md");
+    let alias = h.path().join("AGENTS.md");
+    fs::write(&guide, "local build command\n").unwrap();
+    let selection = h.path().join(".chrono-harness/rules.json");
+    let feed = |label: &str| {
+        serde_json::to_vec(&serde_json::json!({
+            "schema":"chrono-agent-rules/v1","notice":"attribution",
+            "rules":[{"id":"first","text":label},{"id":"second","text":"second body"}]
+        }))
+        .unwrap()
+    };
+    sync_rules(h.path(), || Ok(feed("old"))).unwrap();
+    assert_eq!(
+        fs::read_link(&alias).unwrap(),
+        std::path::Path::new("CLAUDE.md")
+    );
+    let initial = fs::read_to_string(&alias).unwrap();
+    assert!(initial.contains("second body") && initial.contains("old"));
+    assert!(sync_rules(h.path(), || Ok(feed("old"))).unwrap().is_empty());
+    fs::create_dir(selection.parent().unwrap()).unwrap();
+    fs::write(&selection, r#"{"mode":"only","include":["first"]}"#).unwrap();
+    sync_rules(h.path(), || Ok(feed("new"))).unwrap();
+    let updated = fs::read_to_string(&guide).unwrap();
+    assert!(updated.starts_with("local build command\n") && updated.contains("new"));
+    assert!(!updated.contains("old") && !updated.contains("second body"));
+    assert!(sync_rules(h.path(), || Err("offline".into())).is_err());
+    assert_eq!(fs::read_to_string(&guide).unwrap(), updated);
+    fs::write(&selection, r#"{"mode":"off"}"#).unwrap();
+    sync_rules(h.path(), || panic!("unexpected network access")).unwrap();
+    let off = fs::read_to_string(alias).unwrap();
+    assert!(off.starts_with("local build command\n") && !off.contains("## first"));
+}

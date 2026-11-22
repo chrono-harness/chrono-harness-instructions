@@ -108,6 +108,12 @@ pub(super) struct Bindings {
     pub external: Vec<ExternalInput>,
 }
 
+impl Bindings {
+    pub(super) fn require_absent(&mut self, path: &str) {
+        self.unchanged.insert(path.to_owned(), None);
+    }
+}
+
 pub(super) struct ExternalInput {
     requested: Vec<u8>,
     resolved: Vec<u8>,

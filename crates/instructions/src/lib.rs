@@ -569,6 +569,35 @@ fn prepare(
         .find(|(o, _)| o.format == Format::RootGuide)
         .unwrap()
         .1;
+    let alias = root_guides(&root, block, &mut changes)?;
+    for (output, after) in rendered {
+        if output.format == Format::RootGuide {
+            continue;
+        }
+        let path = root.join(&output.path);
+        let before = regular(&path)?;
+        if let Some(existing) = &before {
+            output.check_owned(&existing.bytes)?;
+        }
+        changes.push(Change::new(path, before, after));
+    }
+    if new_manifest {
+        changes.push(Change::new(
+            manifest_path,
+            manifest_before,
+            catalog::bytes(&manifest)?,
+        ));
+    }
+    let unchanged = changes.iter().filter(|c| c.unchanged()).collect();
+    let mut bindings = transaction::bind_inputs(&root, observed_inputs, unchanged, alias)?;
+    bindings.external = external;
+    changes.retain(|c| !c.unchanged());
+    let mut directories: Vec<_> = directories.into_iter().collect();
+    directories.sort_by_key(|p| p.components().count());
+    Ok((changes, directories, bindings))
+}
+
+fn root_guides(root: &Path, block: &[u8], changes: &mut Vec<Change>) -> Result<bool, String> {
     let agents = root.join("AGENTS.md");
     let claude = root.join("CLAUDE.md");
     let alias = metadata(&agents)?.is_some_and(|m| m.file_type().is_symlink());
@@ -597,14 +626,10 @@ fn prepare(
     } else {
         &claude
     };
-    let after = render(
-        donor_path,
-        donor.map_or(&[], |s| s.bytes.as_slice()),
-        &block,
-    )?;
+    let after = render(donor_path, donor.map_or(&[], |s| s.bytes.as_slice()), block)?;
     if claude_before.is_some() {
         if let Some(before) = &agents_before {
-            if render(&agents, &before.bytes, &block)? != after {
+            if render(&agents, &before.bytes, block)? != after {
                 return Err(format!(
                     "{} and {}: conflicting host-owned content; deliberately consolidate preserved text in CLAUDE.md, then align AGENTS.md or remove the redundant regular AGENTS.md before retrying",
                     agents.display(),
@@ -620,31 +645,7 @@ fn prepare(
     if !alias {
         changes.push(Change::alias(agents, agents_before));
     }
-    for (output, after) in rendered {
-        if output.format == Format::RootGuide {
-            continue;
-        }
-        let path = root.join(&output.path);
-        let before = regular(&path)?;
-        if let Some(existing) = &before {
-            output.check_owned(&existing.bytes)?;
-        }
-        changes.push(Change::new(path, before, after));
-    }
-    if new_manifest {
-        changes.push(Change::new(
-            manifest_path,
-            manifest_before,
-            catalog::bytes(&manifest)?,
-        ));
-    }
-    let unchanged = changes.iter().filter(|c| c.unchanged()).collect();
-    let mut bindings = transaction::bind_inputs(&root, observed_inputs, unchanged, alias)?;
-    bindings.external = external;
-    changes.retain(|c| !c.unchanged());
-    let mut directories: Vec<_> = directories.into_iter().collect();
-    directories.sort_by_key(|p| p.components().count());
-    Ok((changes, directories, bindings))
+    Ok(alias)
 }
 
 /// Retain exact selected UTF-8 bytes and publish the literal root guide and relative alias.
@@ -697,6 +698,13 @@ pub mod test_support {
         fetch: impl FnOnce() -> Result<Vec<u8>, String>,
     ) -> Result<String, String> {
         super::inherit::read(root, fetch)
+    }
+
+    pub fn sync_rules(
+        root: &std::path::Path,
+        fetch: impl FnOnce() -> Result<Vec<u8>, String>,
+    ) -> Result<Vec<std::path::PathBuf>, String> {
+        super::inherit::sync(root, fetch)
     }
 
     use super::*;
@@ -771,6 +779,9 @@ pub fn dispatch(args: &[OsString]) -> CliOutput {
         stderr,
     };
     let rule_result = match args {
+        [op, flag, host] if op == "sync-rules" && flag == "--host-root" => {
+            Some(inherit::sync(Path::new(host), inherit::fetch).map(|_| String::new()))
+        }
         [op] if op == "publish-rules" => Some(inherit::publish()),
         [op, flag, host] if op == "rules" && flag == "--host-root" => {
             Some(inherit::read(Path::new(host), inherit::fetch))
@@ -786,7 +797,7 @@ pub fn dispatch(args: &[OsString]) -> CliOutput {
     if args.is_empty()
         || (args.len() == 1 && ["help", "--help", "-h"].iter().any(|a| args[0] == *a))
     {
-        return reply(0, "Usage:\n  chrono-instructions rules --host-root H\n  chrono-instructions publish-rules\n  chrono-instructions init --host-root H [--methodology M] [--host-context C] [--locale L]\n  chrono-instructions generate --host-root H\nH must be an existing directory. New init adopts embedded atomic rules (zh-CN default) and empty context. --locale binds the fresh root; --methodology retains one opaque file atom (und unless explicitly bound). Registered init retains existing canonical sources for omitted options; explicit differing inputs fail. Optional M/C must be readable UTF-8 regular files. Edit the registered catalog and output plan, then generate root guides, Markdown and skills. AGENTS.md -> CLAUDE.md remains a literal relative alias. Unix only. No host inference or runtime checkout required. Exit 0 complete, 2 usage, 1 generation/IO failure. No judges run.\n".into(), String::new());
+        return reply(0, "Usage:\n  chrono-instructions sync-rules --host-root H\n  chrono-instructions rules --host-root H\n  chrono-instructions publish-rules\n  chrono-instructions init --host-root H [--methodology M] [--host-context C] [--locale L]\n  chrono-instructions generate --host-root H\nH must be an existing directory. New init adopts embedded atomic rules (zh-CN default) and empty context. --locale binds the fresh root; --methodology retains one opaque file atom (und unless explicitly bound). Registered init retains existing canonical sources for omitted options; explicit differing inputs fail. Optional M/C must be readable UTF-8 regular files. Edit the registered catalog and output plan, then generate root guides, Markdown and skills. AGENTS.md -> CLAUDE.md remains a literal relative alias. Unix only. No host inference or runtime checkout required. Exit 0 complete, 2 usage, 1 generation/IO failure. No judges run.\n".into(), String::new());
     }
     if args.len() == 1 && args[0] == "--version" {
         return reply(
