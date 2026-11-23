@@ -1,5 +1,7 @@
 # chrono-harness-instructions 使用说明
 
+组件的用途、开发仓库和示例见 [Chrono Harness 用户与开发者入口](https://github.com/chrono-harness/chrono-harness-main)。
+
 本仓维护基础 agent 指令、按规则 ID 选择的协议和 chrono-instructions 生成工具。
 
 开发分支为 `dev`。日常 PR 合入开发分支，正式版从 `main` 发布。
