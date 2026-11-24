@@ -4,6 +4,27 @@ use verus_builtin_macros::verus;
 #[cfg(verus_keep_ghost)]
 use vstd::prelude::*;
 
+// The test build observes the actual invocation on the current thread. The
+// released tool does not install an observer or retain any state for this.
+#[cfg(all(feature = "test-support", not(verus_keep_ghost)))]
+pub(crate) mod observation {
+    use std::cell::Cell;
+
+    thread_local! {
+        static CALLED: Cell<bool> = const { Cell::new(false) };
+    }
+
+    pub(super) fn mark() {
+        CALLED.set(true);
+    }
+
+    pub(crate) fn observe<T>(operation: impl FnOnce() -> T) -> (T, bool) {
+        CALLED.set(false);
+        let value = operation();
+        (value, CALLED.get())
+    }
+}
+
 verus! {
 
 pub enum Repair {
@@ -19,6 +40,8 @@ pub fn repair(before: bool, installed: bool, backup_ready: bool, committed: bool
         (action is Preserve) == (!(if committed { installed } else { before })
                                  && !(!committed && !before && installed && backup_ready)),
 {
+    #[cfg(all(feature = "test-support", not(verus_keep_ghost)))]
+    observation::mark();
     if if committed { installed } else { before } {
         Repair::Leave
     } else if !committed && installed && backup_ready {

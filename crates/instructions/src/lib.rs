@@ -693,6 +693,11 @@ fn run_generate(host: &Path, fault: Fault) -> Result<Vec<PathBuf>, String> {
 /// Bounded IO-failure injection available only in the dedicated test build.
 #[cfg(feature = "test-support")]
 pub mod test_support {
+    /// Observe one isolated consumer operation on this thread.
+    pub fn with_repair_observation<T>(operation: impl FnOnce() -> T) -> (T, bool) {
+        super::publication_decision::observation::observe(operation)
+    }
+
     pub fn read_rules(
         root: &std::path::Path,
         fetch: impl FnOnce() -> Result<Vec<u8>, String>,
