@@ -27,6 +27,35 @@ pub(crate) mod observation {
 
 verus! {
 
+pub fn event_fits(bytes: u64, limit: u64) -> (fits: bool)
+    ensures fits == (bytes <= limit),
+{
+    bytes <= limit
+}
+
+/// Append the admitted event or rotate under the held log-directory lock.
+pub enum LogWrite {
+    TooLarge,
+    Append,
+    Rotate { archived_files: usize },
+}
+
+pub fn log_write(length: u64, bytes: u64, limit: u64, max_files: usize) -> (action: LogWrite)
+    ensures match action {
+        LogWrite::TooLarge => bytes > limit || max_files == 0,
+        LogWrite::Append => bytes <= limit && max_files > 0 && length + bytes <= limit,
+        LogWrite::Rotate { archived_files } => bytes <= limit && max_files > 0
+            && length + bytes > limit && archived_files + 1 == max_files,
+    },
+{
+    if bytes > limit || max_files == 0 { return LogWrite::TooLarge; }
+    if length > limit - bytes {
+        LogWrite::Rotate { archived_files: max_files - 1 }
+    } else {
+        LogWrite::Append
+    }
+}
+
 pub enum Repair {
     Leave,
     Restore,

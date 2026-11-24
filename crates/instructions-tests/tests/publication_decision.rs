@@ -20,6 +20,19 @@ fn expect_true(actual: bool)
 }
 
 #[cfg_attr(not(verus_keep_ghost), test)]
+fn whole_log_events_roll_only_after_the_last_available_byte() {
+    use policy::{event_fits, log_write, LogWrite};
+    expect_true(event_fits(128, 128));
+    expect_true(!event_fits(129, 128));
+    expect_true(matches!(log_write(123, 5, 128, 2), LogWrite::Append));
+    expect_true(matches!(log_write(124, 5, 128, 2), LogWrite::Rotate { archived_files: 1 }));
+    expect_true(matches!(log_write(128, 1, 128, 1), LogWrite::Rotate { archived_files: 0 }));
+    expect_true(matches!(log_write(0, 129, 128, 2), LogWrite::TooLarge));
+    expect_true(matches!(log_write(u64::MAX, 1, 128, 2), LogWrite::Rotate { archived_files: 1 }));
+    expect_true(matches!(log_write(0, 1, 128, 0), LogWrite::TooLarge));
+}
+
+#[cfg_attr(not(verus_keep_ghost), test)]
 fn rollback_only_replaces_the_exact_installed_object() {
     let untouched = policy::repair(true, false, false, false);
     let fresh = policy::repair(false, true, true, false);
