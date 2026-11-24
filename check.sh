@@ -24,27 +24,6 @@ cargo build --locked --message-format=json-render-diagnostics --target-dir "$scr
 export CHRONO_TEST_INSTRUCTIONS="$scratch/product/debug/chrono-instructions"
 cargo test --locked --target-dir "$scratch/tests" --manifest-path "$tests"
 
-byte_array() {
-  od -An -v -tu1 | jq -cs .
-}
-
-proof_sources_match() {
-  local output=$1 source digest
-  shift
-  {
-    byte_array < "$output.d"
-    printf %s "$output.d" | byte_array
-    printf %s "$output" | byte_array
-    for source in "$@"; do
-      digest=$(shasum -a 256 < "$source") || return 1
-      jq -cn --argjson path "$(printf %s "$source" | byte_array)" \
-        --arg sha "${digest%% *}" --argjson length "$(wc -c < "$source")" \
-        '{path:$path, sha256:($sha|explode), length:$length}' || return 1
-    done
-  } | jq -cs '{operation:"dependency-matches", dependency:.[0], targets:.[1:3], sources:.[3:]}' |
-    chrono-harness compiler-output-v1 | jq -e '. == true' >/dev/null
-}
-
 coverage_failure() {
   echo "E_VERUS_COVERAGE: $*" >&2
   exit 1
@@ -64,7 +43,7 @@ prove() {
     ."encountered-error" == false and ."encountered-vir-error" == false and
     .errors == 0 and .verified > 0)' "$scratch/proof.json" >/dev/null || coverage_failure "$label: unexpected verifier report"
   test -s "$output" && test -s "$output.d" || coverage_failure "$label: missing compiler output"
-  proof_sources_match "$output" "$@" || coverage_failure "$label: compiled sources differ from required inputs"
+  chrono-host-bootstrap check-compiler-sources proof "$output" "$@" || coverage_failure "$label: compiled sources differ from required inputs"
 }
 
 decision=crates/instructions/src/publication_decision.rs
@@ -78,14 +57,8 @@ metadata=$(jq -ers --arg manifest "$(pwd -P)/$product" '
 filename=${metadata##*/}
 stem=${filename#lib}
 stem=${metadata%/*}/${stem%.rmeta}
-{
-  byte_array < "$stem.d"
-  printf %s "$stem" | byte_array
-} | jq -cs '{operation:"dependency-paths",dependency:.[0],stem:.[1]}' |
-  chrono-harness compiler-output-v1 |
-  jq -e 'type == "array" and any(.[]; . == ("src/publication_decision.rs"|explode))
-         and any(.[]; . == ("src/transaction.rs"|explode))' >/dev/null ||
-  coverage_failure "publication decision or transaction missing from the native library"
+chrono-host-bootstrap check-compiler-sources native "$stem" src/publication_decision.rs src/transaction.rs ||
+  coverage_failure "native library differs from required sources"
 
 prove verify.instructions-publication "$decision" "$decision"
 prove verify.instructions-publication-tests "$expectations" "$expectations" \
