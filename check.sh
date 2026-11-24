@@ -47,6 +47,10 @@ grep -Fxq "test $consumer ... ok" "$scratch/tests.log" ||
 grep -Fxq "test raw_event_reader_checks_every_captured_identity ... ok" "$scratch/tests.log" ||
   coverage_failure "the GitHub identity consumer did not run successfully"
 
+grep -Fxq "test live_rule_selection_follows_upstream_and_preserves_local_work ... ok" "$scratch/tests.log" &&
+  grep -Fxq "test root_guides_follow_published_selection_without_losing_host_text ... ok" "$scratch/tests.log" ||
+  coverage_failure "the inherited rule consumers did not exercise selection and guide sync"
+
 # Read the exact library selected by Cargo in the build of the tested executable.
 metadata=$(jq -ers --arg manifest "$(pwd -P)/$product" '
   [.[] | select(.reason == "compiler-artifact" and .manifest_path == $manifest
@@ -56,5 +60,5 @@ metadata=$(jq -ers --arg manifest "$(pwd -P)/$product" '
 filename=${metadata##*/}
 stem=${filename#lib}
 stem=${metadata%/*}/${stem%.rmeta}
-chrono-host-bootstrap check-compiler-sources native "$stem" src/publication_decision.rs src/transaction.rs src/event_identity.rs src/github_event.rs ||
+chrono-host-bootstrap check-compiler-sources native "$stem" src/publication_decision.rs src/transaction.rs src/event_identity.rs src/github_event.rs src/rule_selection.rs src/verified_bytes.rs src/inherit.rs ||
   coverage_failure "native library differs from required sources"

@@ -408,6 +408,27 @@
       }
     },
     {
+      "path": "crates/instructions-tests/tests/rule_selection.rs",
+      "owner": "instructions-tests",
+      "surface": "test",
+      "cost": "unmeasured",
+      "edges": [
+        {
+          "kind": "test-execution",
+          "to": "test:instructions-tests"
+        }
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions-tests/tests/rule_selection.rs",
+            "operation": "verify.instructions-rule-selection-tests"
+          }
+        ]
+      }
+    },
+    {
       "path": "crates/instructions/Cargo.lock",
       "owner": "instructions",
       "surface": "product",
@@ -554,6 +575,31 @@
       }
     },
     {
+      "path": "crates/instructions/src/rule_selection.rs",
+      "owner": "instructions",
+      "surface": "product",
+      "cost": "unmeasured",
+      "edges": [
+        {
+          "kind": "test-execution",
+          "to": "test:instructions-tests"
+        }
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions/src/rule_selection.rs",
+            "operation": "verify.instructions-rule-selection"
+          },
+          {
+            "path": "crates/instructions-tests/tests/rule_selection.rs",
+            "operation": "verify.instructions-rule-selection-tests"
+          }
+        ]
+      }
+    },
+    {
       "path": "crates/instructions/src/transaction.rs",
       "owner": "instructions",
       "surface": "product",
@@ -564,6 +610,39 @@
           "to": "test:instructions-tests"
         }
       ]
+    },
+    {
+      "path": "crates/instructions/src/verified_bytes.rs",
+      "owner": "instructions",
+      "surface": "product",
+      "cost": "unmeasured",
+      "edges": [
+        {
+          "kind": "test-execution",
+          "to": "test:instructions-tests"
+        }
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions/src/event_identity.rs",
+            "operation": "verify.instructions-event-identity"
+          },
+          {
+            "path": "crates/instructions-tests/tests/event_identity.rs",
+            "operation": "verify.instructions-event-identity-tests"
+          },
+          {
+            "path": "crates/instructions/src/rule_selection.rs",
+            "operation": "verify.instructions-rule-selection"
+          },
+          {
+            "path": "crates/instructions-tests/tests/rule_selection.rs",
+            "operation": "verify.instructions-rule-selection-tests"
+          }
+        ]
+      }
     },
     {
       "path": "docs/licenses/methodology-attribution.md",
@@ -615,6 +694,8 @@
         "verify.instructions-publication-tests",
         "verify.instructions-event-identity",
         "verify.instructions-event-identity-tests",
+        "verify.instructions-rule-selection",
+        "verify.instructions-rule-selection-tests",
         "instructions.owner-check"
       ],
       "timeout_seconds": 600,

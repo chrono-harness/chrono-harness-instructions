@@ -1430,6 +1430,20 @@ fn live_rule_selection_follows_upstream_and_preserves_local_work() {
     assert!(load(&new).contains("added") && !load(&new).contains("edited"));
     fs::write(&path, r#"{"mode":"only","include":["first"]}"#).unwrap();
     assert!(load(&new).contains("edited") && !load(&new).contains("added"));
+    fs::write(
+        &path,
+        r#"{"mode":"only","include":["missing","next","next"]}"#,
+    )
+    .unwrap();
+    assert_eq!(load(&new), "Source\n\n## next\n\nadded\n");
+    assert!(
+        chrono_instructions::test_support::read_rules(host.path(), || Ok(fetch(&[
+            ("first", "a"),
+            ("first", "b"),
+            ("next", "included")
+        ])))
+        .is_err()
+    );
     for disabled in [r#"{"mode":"off"}"#, r#"{"mode":"only","include":[]}"#] {
         fs::write(&path, disabled).unwrap();
         assert_eq!(
@@ -1491,6 +1505,12 @@ fn root_guides_follow_published_selection_without_losing_host_text() {
     assert!(!updated.contains("old") && !updated.contains("second body"));
     assert!(sync_rules(h.path(), || Err("offline".into())).is_err());
     assert_eq!(fs::read_to_string(&guide).unwrap(), updated);
+    assert!(sync_rules(h.path(), || Ok(feed("<!-- chrono-instructions"))).is_err());
+    assert_eq!(fs::read_to_string(&guide).unwrap(), updated);
+    assert_eq!(
+        fs::read_link(&alias).unwrap(),
+        std::path::Path::new("CLAUDE.md")
+    );
     fs::write(&selection, r#"{"mode":"off"}"#).unwrap();
     sync_rules(h.path(), || panic!("unexpected network access")).unwrap();
     let off = fs::read_to_string(alias).unwrap();
