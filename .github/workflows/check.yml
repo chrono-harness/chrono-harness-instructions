@@ -15,7 +15,7 @@ jobs:
         with:
           version: 2026.11.12
           cache: false
-          install_args: http:verus
+          install_args: http:verus http:chrono-harness
       - run: VERUS="$(mise which verus)" ./check.sh
   publish-rules:
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'

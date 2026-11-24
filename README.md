@@ -2,7 +2,7 @@
 
 按宿主规则生成项目指南。
 
-使用 `cargo build --locked --manifest-path crates/instructions/Cargo.toml` 构建。安装 Verus 0.2026.04.24.f8e1704，运行 `VERUS=/path/to/verus ./check.sh` 检查格式、构建、测试及证明。
+使用 `cargo build --locked --manifest-path crates/instructions/Cargo.toml` 构建。运行 `mise run harness-setup` 安装本仓固定的工具，再运行 `mise exec -- ./check.sh` 检查格式、构建、测试和证明。检查读取 Verus 返回的编译依赖，将生产判法和独立预期的完整字节逐项与本次输入核对。
 
 源码来自 [固定版本的原实现](https://github.com/ChronoAIProject/chrono-harness/tree/5f6892dfa2f73675a84e4ebdc3b06eb83b824d6e/crates/instructions)。
 
