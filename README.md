@@ -14,6 +14,10 @@
 
 本仓贡献者可以单独安装 [chrono-pr v0.1.0-alpha.2](https://github.com/chrono-harness/chrono-harness-pr/releases/tag/v0.1.0-alpha.2)，从仓库根目录使用 `pr-open`、`pr-status` 和 `pr-reminders` 跟进变更。仓库、分支和检查名登记在 `.chrono-harness/pr.json`。
 
+## 本仓检查
+
+从本仓根目录运行 `mise exec -- ./check.sh`。它安装本仓固定的发行工具，按 Git 基线和候选的 FILEMAP 选择操作。事务修复的变更同时运行产品证明、独立测试证明及原生回滚用例。GitHub 的 `Instructions / recovery` 单元上传真实报告和编译回执，`check` 汇总作业使用 `chrono-harness check --collect` 读回这些原件。CLI 会报告原操作失败原因。
+
 ## 继承上游规则
 
 在仓库根目录运行 `chrono-instructions rules --host-root .`。命令每次读取上游最近一次通过检查后发布的数据，将本仓接纳的规则和 ID 写到标准输出。运行 `chrono-instructions sync-rules --host-root .` 会把相同的选择写入根 `CLAUDE.md` 的生成块，并将 `AGENTS.md` 链接到它。本仓追加说明保存在块外。克隆仓库后可以直接阅读已提交的全部规则。重复同步相同规则时文件保持原样，获取失败时保留已有规则。读取规则需要 HTTPS 和 curl。上游暂不可用时命令返回错误；本地说明仍在仓库内。

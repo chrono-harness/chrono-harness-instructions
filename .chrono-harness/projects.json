@@ -74,7 +74,8 @@
           "operation": "instructions.owner-check",
           "tool": "bash",
           "argv": [
-            "./check.sh"
+            "./check.sh",
+            "--native"
           ]
         }
       },
