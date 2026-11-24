@@ -20,24 +20,73 @@ for manifest in "$product" "$tests"; do
   cargo fmt --check --manifest-path "$manifest"
 done
 export CARGO_NET_OFFLINE=true
-cargo build --locked --target-dir "$scratch/product" --manifest-path "$product"
+cargo build --locked --message-format=json-render-diagnostics --target-dir "$scratch/product" --manifest-path "$product" > "$scratch/build.jsonl"
 export CHRONO_TEST_INSTRUCTIONS="$scratch/product/debug/chrono-instructions"
 cargo test --locked --target-dir "$scratch/tests" --manifest-path "$tests"
 
+byte_array() {
+  od -An -v -tu1 | jq -cs .
+}
+
+proof_sources_match() {
+  local output=$1 source digest
+  shift
+  {
+    byte_array < "$output.d"
+    printf %s "$output.d" | byte_array
+    printf %s "$output" | byte_array
+    for source in "$@"; do
+      digest=$(shasum -a 256 < "$source") || return 1
+      jq -cn --argjson path "$(printf %s "$source" | byte_array)" \
+        --arg sha "${digest%% *}" --argjson length "$(wc -c < "$source")" \
+        '{path:$path, sha256:($sha|explode), length:$length}' || return 1
+    done
+  } | jq -cs '{operation:"dependency-matches", dependency:.[0], targets:.[1:3], sources:.[3:]}' |
+    chrono-harness compiler-output-v1 | jq -e '. == true' >/dev/null
+}
+
+coverage_failure() {
+  echo "E_VERUS_COVERAGE: $*" >&2
+  exit 1
+}
+
 prove() {
   local label=$1 root=$2
+  shift 2
   local output="$scratch/$label.rlib"
   "${VERUS:-verus}" --crate-type=lib --no-cheating --no-external-by-default --num-threads 2 \
     --output-json --compile "--emit=link=$output,dep-info=$output.d" "$root" -o "$output" \
-    -Zchecksum-hash-algorithm=sha256 > "$scratch/proof.json" || { cat "$scratch/proof.json" >&2; return 1; }
+    -Zchecksum-hash-algorithm=sha256 > "$scratch/proof.json" || { cat "$scratch/proof.json" >&2; coverage_failure "$label: verifier failed"; }
   cat "$scratch/proof.json"
   jq -e '.verus.version == "0.2026.04.24.f8e1704" and
     .verus.commit == "f8e17045c4ac17a02e566b8997070f2eecc255be" and
     (."verification-results" | .success == true and ."is-verifying-entire-crate" == true and
     ."encountered-error" == false and ."encountered-vir-error" == false and
-    .errors == 0 and .verified > 0)' "$scratch/proof.json" >/dev/null
-  test -s "$output" && test -s "$output.d"
+    .errors == 0 and .verified > 0)' "$scratch/proof.json" >/dev/null || coverage_failure "$label: unexpected verifier report"
+  test -s "$output" && test -s "$output.d" || coverage_failure "$label: missing compiler output"
+  proof_sources_match "$output" "$@" || coverage_failure "$label: compiled sources differ from required inputs"
 }
 
-prove verify.instructions-publication crates/instructions/src/publication_decision.rs
-prove verify.instructions-publication-tests crates/instructions-tests/tests/publication_decision.rs
+decision=crates/instructions/src/publication_decision.rs
+expectations=crates/instructions-tests/tests/publication_decision.rs
+# Read the exact library selected by Cargo in the build of the tested executable.
+metadata=$(jq -ers --arg manifest "$(pwd -P)/$product" '
+  [.[] | select(.reason == "compiler-artifact" and .manifest_path == $manifest
+                 and .target.kind == ["lib"]) | .filenames[] | select(endswith(".rmeta"))]
+  | if length == 1 then .[0] else error("expected the product library") end
+' "$scratch/build.jsonl") || coverage_failure "native library was not identified"
+filename=${metadata##*/}
+stem=${filename#lib}
+stem=${metadata%/*}/${stem%.rmeta}
+{
+  byte_array < "$stem.d"
+  printf %s "$stem" | byte_array
+} | jq -cs '{operation:"dependency-paths",dependency:.[0],stem:.[1]}' |
+  chrono-harness compiler-output-v1 |
+  jq -e 'type == "array" and any(.[]; . == ("src/publication_decision.rs"|explode))
+         and any(.[]; . == ("src/transaction.rs"|explode))' >/dev/null ||
+  coverage_failure "publication decision or transaction missing from the native library"
+
+prove verify.instructions-publication "$decision" "$decision"
+prove verify.instructions-publication-tests "$expectations" "$expectations" \
+  crates/instructions-tests/tests/../../instructions/src/publication_decision.rs
