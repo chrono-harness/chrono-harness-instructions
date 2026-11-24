@@ -1,3 +1,4 @@
+use crate::rule_selection::catalog_admission::{self, LocaleError, OutputError, VariantError};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -189,15 +190,18 @@ impl Manifest {
         let mut roots = 0;
         for output in &self.outputs {
             identity(&output.id)?;
-            if !ids.insert(&output.id) {
-                return Err(format!("duplicate output ID {}", output.id));
-            }
-            if !paths.insert(&output.path) {
-                return Err(format!("duplicate output path {}", output.path));
-            }
-            if output.roots.is_empty() {
-                return Err(format!("output {}: roots must not be empty", output.id));
-            }
+            catalog_admission::output(
+                &mut ids,
+                &mut paths,
+                &output.id,
+                &output.path,
+                output.roots.len(),
+            )
+            .map_err(|e| match e {
+                OutputError::DuplicateId => format!("duplicate output ID {}", output.id),
+                OutputError::DuplicatePath => format!("duplicate output path {}", output.path),
+                OutputError::EmptyRoots => format!("output {}: roots must not be empty", output.id),
+            })?;
             if let Some(title) = &output.title {
                 if !single_line(title) {
                     return Err(format!(
@@ -237,19 +241,12 @@ impl Manifest {
                 }
                 _ => {}
             }
-            if output.format == Format::RootGuide {
-                roots += 1;
-                if output.path != "CLAUDE.md" {
-                    return Err("root-guide path must be CLAUDE.md".into());
-                }
-            } else if output.path == "CLAUDE.md" {
-                return Err("CLAUDE.md is reserved for root-guide".into());
-            }
+            roots += usize::from(catalog_admission::root_output(
+                output.format == Format::RootGuide,
+                output.path.as_bytes(),
+            )?);
         }
-        if roots != 1 {
-            return Err("registration must contain exactly one root-guide".into());
-        }
-        Ok(())
+        catalog_admission::finish_roots(roots).map_err(str::to_owned)
     }
     pub fn root(&self) -> &Output {
         self.outputs
@@ -266,35 +263,37 @@ impl Catalog {
         let mut locales = BTreeSet::new();
         for locale in &self.locales {
             identity(&locale.id)?;
-            if !locales.insert(&locale.id) {
-                return Err(format!("duplicate locale {}", locale.id));
-            }
-            if locale.root_frame.trim().is_empty() || locale.projection_notice.trim().is_empty() {
-                return Err(format!("locale {}: empty frame/notice", locale.id));
-            }
+            catalog_admission::locale(
+                &mut locales,
+                &locale.id,
+                locale.root_frame.trim().is_empty(),
+                locale.projection_notice.trim().is_empty(),
+            )
+            .map_err(|e| match e {
+                LocaleError::Duplicate => format!("duplicate locale {}", locale.id),
+                LocaleError::EmptyFrame => format!("locale {}: empty frame/notice", locale.id),
+            })?;
             content_valid(&locale.root_frame)?;
             content_valid(&locale.projection_notice)?;
         }
         let mut atoms = BTreeMap::new();
         for atom in &self.atoms {
             identity(&atom.id)?;
-            if atoms.insert(atom.id.as_str(), atom).is_some() {
+            if !catalog_admission::register_atom(&mut atoms, atom.id.as_str(), atom) {
                 return Err(format!("duplicate atom {}", atom.id));
             }
             let mut variants = BTreeSet::new();
             for variant in &atom.variants {
-                if !locales.contains(&variant.locale) {
-                    return Err(format!(
-                        "atom {}: unregistered locale {}",
-                        atom.id, variant.locale
-                    ));
-                }
-                if !variants.insert(&variant.locale) {
-                    return Err(format!(
-                        "atom {}: duplicate variant {}",
-                        atom.id, variant.locale
-                    ));
-                }
+                catalog_admission::variant(&locales, &mut variants, &variant.locale).map_err(
+                    |e| match e {
+                        VariantError::Unregistered => {
+                            format!("atom {}: unregistered locale {}", atom.id, variant.locale)
+                        }
+                        VariantError::Duplicate => {
+                            format!("atom {}: duplicate variant {}", atom.id, variant.locale)
+                        }
+                    },
+                )?;
             }
         }
         let mut visited = BTreeSet::new();

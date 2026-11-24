@@ -36,6 +36,82 @@ fn literal_core_and_relative_alias_are_the_default_layout() {
     assert_eq!(host.read("AGENTS.md"), guide);
 }
 
+#[test]
+fn registered_guide_and_catalog_failures_preserve_the_entire_host() {
+    use serde_json::{Value, json};
+    const CATALOG: &str = ".chrono-harness/instructions/catalog.json";
+    let host = Host::new();
+    host.init().unwrap();
+    let mut manifest: Value = serde_json::from_slice(&host.read(MANIFEST)).unwrap();
+    let root = manifest["outputs"][0].clone();
+    let id = root["id"].as_str().unwrap();
+    let catalog: Value = serde_json::from_slice(&host.read(CATALOG)).unwrap();
+    let check = |input: &str, bad: &Value, message: &str| {
+        host.write(input, serde_json::to_vec(bad).unwrap());
+        let before = host.snapshot();
+        let error = generate(&host.root).unwrap_err();
+        assert!(error.ends_with(message), "{error} != {message}");
+        assert_eq!(host.snapshot(), before);
+    };
+    manifest["outputs"] = json!([root, root]);
+    check(MANIFEST, &manifest, &format!("duplicate output ID {id}"));
+    manifest["outputs"][1]["id"] = json!("second");
+    check(MANIFEST, &manifest, "duplicate output path CLAUDE.md");
+    manifest["outputs"] = json!([]);
+    check(
+        MANIFEST,
+        &manifest,
+        "registration must contain exactly one root-guide",
+    );
+    manifest["outputs"] = json!([root]);
+    manifest["outputs"][0]["path"] = json!("other.md");
+    check(MANIFEST, &manifest, "root-guide path must be CLAUDE.md");
+    manifest["outputs"][0]["path"] = json!("CLAUDE.md");
+    manifest["outputs"][0]["title"] = json!("Local policy");
+    host.write(MANIFEST, serde_json::to_vec(&manifest).unwrap());
+    generate(&host.root).unwrap();
+    assert!(
+        String::from_utf8(host.read("AGENTS.md"))
+            .unwrap()
+            .contains("# Local policy")
+    );
+    assert_eq!(host.read("AGENTS.md"), host.read("CLAUDE.md"));
+    let mut bad = catalog.clone();
+    let repeated = catalog["locales"][0].clone();
+    bad["locales"]
+        .as_array_mut()
+        .unwrap()
+        .push(repeated.clone());
+    check(
+        CATALOG,
+        &bad,
+        &format!("duplicate locale {}", repeated["id"].as_str().unwrap()),
+    );
+    bad = catalog.clone();
+    let atom = catalog["atoms"][0].clone();
+    bad["atoms"].as_array_mut().unwrap().push(atom.clone());
+    check(
+        CATALOG,
+        &bad,
+        &format!("duplicate atom {}", atom["id"].as_str().unwrap()),
+    );
+    let mut bad = catalog;
+    let variant = bad["atoms"][0]["variants"][0].clone();
+    bad["atoms"][0]["variants"]
+        .as_array_mut()
+        .unwrap()
+        .push(variant.clone());
+    check(
+        CATALOG,
+        &bad,
+        &format!(
+            "atom {}: duplicate variant {}",
+            atom["id"].as_str().unwrap(),
+            variant["locale"].as_str().unwrap()
+        ),
+    );
+}
+
 fn assert_alias(host: &Host) {
     let path = host.root.join("AGENTS.md");
     assert!(
