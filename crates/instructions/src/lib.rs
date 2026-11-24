@@ -1,6 +1,7 @@
 //! Explicit host instruction generation. No judge execution or host discovery.
 
 mod catalog;
+pub mod event_identity;
 pub mod github_event;
 mod inherit;
 #[doc(hidden)]

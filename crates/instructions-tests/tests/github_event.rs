@@ -132,3 +132,27 @@ fn public_v2_events_remain_readable_and_mixed_records_are_ambiguous() {
     assert!(parse(&format!("{old}\n\n{new}")).is_err());
     assert!(parse(&format!("{new}\n\n{old}")).is_err());
 }
+
+#[test]
+fn raw_event_reader_checks_every_captured_identity() {
+    let sample = sample();
+    let wire = format(&sample).unwrap();
+    let ids = [&sample.session, &sample.parent, &sample.task, &sample.event];
+    for (i, a) in ids.iter().enumerate() {
+        for b in &ids[i + 1..] {
+            let collision = wire.replace(b.as_str(), a.as_str());
+            let message = parse(&collision).unwrap_err();
+            assert!(message.contains("independent IDs"), "{message}");
+        }
+    }
+    let wrong_end = wire.replace(
+        &std::format!("<!-- /chrono-agent:v3 event={}", sample.event),
+        &std::format!("<!-- /chrono-agent:v3 event={}", sample.task),
+    );
+    assert!(
+        parse(&wrong_end)
+            .unwrap_err()
+            .contains("opening and closing")
+    );
+    assert_eq!(parse(&wire).unwrap(), sample);
+}

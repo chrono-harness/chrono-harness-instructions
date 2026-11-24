@@ -31,10 +31,25 @@ pub struct AgentEvent {
 impl AgentEvent {
     fn fields(
         [agent, session, parent, task, event, action, state, target]: [&str; 8],
+        closing: Option<&str>,
     ) -> Result<Self, String> {
-        let ids = [session, parent, task, event];
-        if ids.iter().enumerate().any(|(i, id)| ids[..i].contains(id)) {
-            return Err("unknown: session, parent, task and event require independent IDs".into());
+        use crate::event_identity::{Identity, identity};
+        match identity(
+            session.as_bytes(),
+            parent.as_bytes(),
+            task.as_bytes(),
+            event.as_bytes(),
+            closing.map(str::as_bytes),
+        ) {
+            Identity::Valid => (),
+            Identity::ClosingMismatch => {
+                return Err("unknown: opening and closing event IDs differ".into());
+            }
+            Identity::ReusedId => {
+                return Err(
+                    "unknown: session, parent, task and event require independent IDs".into(),
+                );
+            }
         }
         Ok(Self {
             agent: agent.into(),
@@ -60,10 +75,10 @@ impl AgentEvent {
             target,
             closing,
         ] = c.extract().1;
-        if event != closing {
-            return Err("unknown: opening and closing event IDs differ".into());
-        }
-        Self::fields([agent, session, parent, task, event, action, state, target])
+        Self::fields(
+            [agent, session, parent, task, event, action, state, target],
+            Some(closing),
+        )
     }
 }
 
@@ -121,7 +136,7 @@ pub fn parse(body: &str) -> Result<AgentEvent, String> {
             let c = LEGACY_LINE
                 .captures(&body[*start..])
                 .ok_or("unknown: malformed v2 event")?;
-            (*start, AgentEvent::fields(c.extract().1)?)
+            (*start, AgentEvent::fields(c.extract().1, None)?)
         }
         [Marker::Opening(start), Marker::Closing(end)] => {
             let frame = &body[*start..];

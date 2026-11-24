@@ -44,6 +44,8 @@ consumer=atomic::late_extra_output_failure_rolls_back_nested_directories_and_pri
 cargo test --color never --locked --target-dir "$scratch/tests" --manifest-path "$tests" -- --format pretty | tee "$scratch/tests.log"
 grep -Fxq "test $consumer ... ok" "$scratch/tests.log" ||
   coverage_failure "the required transaction rollback consumer did not run successfully"
+grep -Fxq "test raw_event_reader_checks_every_captured_identity ... ok" "$scratch/tests.log" ||
+  coverage_failure "the GitHub identity consumer did not run successfully"
 
 # Read the exact library selected by Cargo in the build of the tested executable.
 metadata=$(jq -ers --arg manifest "$(pwd -P)/$product" '
@@ -54,5 +56,5 @@ metadata=$(jq -ers --arg manifest "$(pwd -P)/$product" '
 filename=${metadata##*/}
 stem=${filename#lib}
 stem=${metadata%/*}/${stem%.rmeta}
-chrono-host-bootstrap check-compiler-sources native "$stem" src/publication_decision.rs src/transaction.rs ||
+chrono-host-bootstrap check-compiler-sources native "$stem" src/publication_decision.rs src/transaction.rs src/event_identity.rs src/github_event.rs ||
   coverage_failure "native library differs from required sources"
