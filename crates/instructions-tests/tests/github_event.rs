@@ -8,6 +8,7 @@ fn roundtrip_raw_body_with_optional_single_terminator() {
     let event = sample();
     let line = format(&event).unwrap();
     for separator in ["\n", "\r\n"] {
+        let line = line.replace('\n', separator);
         for ending in ["", separator] {
             assert_eq!(
                 parse(&format!("done{separator}{separator}{line}{ending}")).unwrap(),
@@ -21,15 +22,28 @@ fn roundtrip_raw_body_with_optional_single_terminator() {
 fn ignores_markdown_examples_and_rejects_ambiguous_or_nonterminal_frames() {
     let event = sample();
     let line = format(&event).unwrap();
+    let quote = line
+        .lines()
+        .map(|row| format!("> > {row}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let indented = line
+        .lines()
+        .map(|row| format!("    {row}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     for sample in [
-        format!("> - `{line}`"),
-        format!("> > {line}"),
+        quote,
+        indented,
         format!("~~~\n{line}\n~~~"),
-        format!("    {line}"),
-        format!("<!--\n{line}\n-->"),
+        format!("<pre>\n{line}\n</pre>"),
     ] {
         assert!(parse(&sample).is_err(), "{sample}");
-        assert_eq!(parse(&format!("{sample}\n\n{line}")).unwrap(), event);
+        assert_eq!(
+            parse(&format!("{sample}\n\n{line}")).unwrap(),
+            event,
+            "{sample}"
+        );
     }
     for invalid in [
         format!("message\n{line}"),
@@ -40,10 +54,27 @@ fn ignores_markdown_examples_and_rejects_ambiguous_or_nonterminal_frames() {
         format!("{line}\n\n"),
         format!("{line} "),
         format!(" {line}"),
-        line.replace(" v=2 ", " v=２ "),
-        line.replace("agent=", "аgent="),
-        line.replace("action=ci.wait", "action=ciXwait"),
-        line.replace(" 4", " 7"),
+        line.replace(":v3 ", ":v4 "),
+        line.replace("**Agent**", "**Аgent**"),
+        line.replace("ci.wait", "ciXwait"),
+        line.replace("**state**", "**State**"),
+        line.replace(" · ", " | "),
+        line.replace(
+            "<!-- /chrono-agent:v3 event=e1",
+            "<!-- /chrono-agent:v3 event=a1",
+        ),
+        line.replacen("e1000000", "f1000000", 1),
+        line.split_once('\n').unwrap().1.to_string(),
+        line.rsplit_once('\n').unwrap().0.to_string(),
+        format!("<!-- chrono-agent:v4 bad -->\n\n{line}"),
+        format!("{line}\rX"),
+        format!(
+            "- one\n\n{}",
+            line.lines()
+                .map(|row| format!("  {row}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ),
         line.replace(
             "parent=bf49786f-66b2-4f31-929b-1be2b859c64d",
             "parent=058ca5a5-1923-4ec4-8cf6-74a1694a510d",
@@ -84,4 +115,20 @@ fn validates_targets_ids_and_emitted_fields() {
     e = sample();
     e.event = e.task.clone();
     assert!(format(&e).is_err());
+}
+
+#[test]
+fn public_v2_events_remain_readable_and_mixed_records_are_ambiguous() {
+    let e = sample();
+    let old = format!(
+        "CHRONO_AGENT_BEGIN_082981f29eb429599bac65802d2f5465 v=2 agent={} session={} parent={} task={} event={} action={} state={} target={} CHRONO_AGENT_END_94f7082e08249c1b16af162e9625946a",
+        e.agent, e.session, e.parent, e.task, e.event, e.action, e.state, e.target
+    );
+    assert_eq!(
+        parse(&format!("existing report\r\n\r\n{old}\r\n")).unwrap(),
+        e
+    );
+    let new = format(&e).unwrap();
+    assert!(parse(&format!("{old}\n\n{new}")).is_err());
+    assert!(parse(&format!("{new}\n\n{old}")).is_err());
 }

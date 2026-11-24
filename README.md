@@ -48,6 +48,14 @@ gh api repos/OWNER/REPO/issues/NUMBER | jq -j .body | chrono-instructions event-
 chrono-instructions event-regex
 ~~~
 
-event-format 接受 agent、session、parent、task、event、action、state、target 八个字符串组成的 JSON 对象。原始 API body 可能已自带末尾换行；对机器输入请保留原始字节，例如用 jq -j '.body' 提取。[完整规则](assets/instructions/catalog.json) · [可复制正则](assets/instructions/github-event-v2.regex)
+event-format 接受 agent、session、parent、task、event、action、state、target 八个字符串。它生成以下三行，页面会显示中间的摘要。用户可以先写任意说明，空一行后附上完整记录。首尾 event 相同，session 与 task 可跨事件关联。
 
-正则读取单行，按顺序捕获八个字段。开启 ASCII，大小写敏感，关闭多行，以 fullmatch 或等价的整串比较应用。正文先将 CRLF 转为 LF，拒绝孤立 CR 和两个及以上末尾换行；最终一条必须是顶层普通段落，前方若有正文须有空行。代码、引述、HTML 注释与嵌套段落中的示例不作签名。读取器同样检查 UUID 独立性。每条记录保留 GitHub 作者、原始对象 URL 和创建时间。精确复制一条合法事件会通过语法检查。
+~~~markdown
+<!-- chrono-agent:v3 event=e1000000-0000-4000-b000-000000000000 session=058ca5a5-1923-4ec4-8cf6-74a1694a510d parent=- task=a1000000-0000-4000-8000-000000000000 -->
+**Agent** `codex/root` · **action** `review` · **state** `succeeded` · **target** `org/repo#12`
+<!-- /chrono-agent:v3 event=e1000000-0000-4000-b000-000000000000 -->
+~~~
+
+用 `event-read` 读取 GitHub API 的原始 body，正文可用 LF 或 CRLF，末尾可有一个换行。读取器识别 Markdown 顶层结构，核对记录唯一、完整、位于文末且 UUID 各自独立。引述、围栏和嵌套 HTML 示例中的内容按正文处理。历史 v2 仍可读取。保存事件时连同 GitHub 作者、原始对象 URL 和创建时间一起保存。
+
+`event-regex` 提供Python、PCRE2 和 JavaScript 均可使用的跨行表达式，匹配完整的三行内容，捕获组 1 到 8 依次为 event、session、parent、task、agent、action、state、target。`\1` 要求末行 UUID 与首行逐字一致。各环境关闭多行、忽略大小写和 dotall 模式。比如在 Python 中可使用 `re.fullmatch(pattern.rstrip("\n"), frame, flags=re.ASCII).groups()`。应从 Markdown 中识别出顶层候选后再匹配。正文原样复制仍能通过语法校验。[可复制正则](assets/instructions/github-event-v3.regex) · [完整规则](assets/instructions/catalog.json)
