@@ -1476,6 +1476,26 @@
       ]
     },
     {
+      "id": "collaboration.github-agent-identity",
+      "requires": [],
+      "variants": [
+        {
+          "locale": "zh-CN",
+          "source": {
+            "type": "inline",
+            "text": "在 GitHub 上标明发言的 agent 和会话。创建 Issue、PR、其评论和评审时，在正文后空一行，将下列格式作为最后一个非空行。以实际值替换尖括号占位符，使用固定字段顺序及单个 ASCII 空格，页脚为可见纯文本。\n\nChrono-Agent-v1: agent=<agent> session=<session> parent=<parent>\n\nagent 写实际运行时和层级任务路径，例如 codex/root/routes。用 / 分隔至少两段，每段符合 [a-z0-9][a-z0-9_-]*。会话首次使用时生成一个专供公开署名的小写随机 UUIDv4。同一会话继续工作或重试时复用该值；新会话或 fork 各自生成新值。直接委派者在派发时传递自己的公开 UUID，子会话把收到的真实直接父 UUID 写入 parent，用不同于自身的 UUID。根会话写 -。公开身份只使用这些专用值，私有运行时 ID、令牌和凭证留在本地。\n\nGitHub 显示的账号是作者，页脚是 agent 对路径和会话的自报。授权依据 GitHub 权限及独立校验。编辑已有正文时保留原作者的页脚；其他会话另发带自身页脚的评论。识别时只接受一个满足上述要求的正文末尾署名。跳过 Markdown 引用、代码围栏和行内代码里的示例。缺失、格式错误或出现多个候选署名时记录 unknown，历史内容同样处理。"
+          }
+        },
+        {
+          "locale": "en",
+          "source": {
+            "type": "inline",
+            "text": "Identify the speaking agent and session on GitHub. When creating an issue, pull request, comment on either, or review, leave a blank line after the body and use the following format as its last nonempty line. Replace the angle-bracket placeholders with actual values. Keep the fields in order with one ASCII space between them and render the footer as visible plain text.\n\nChrono-Agent-v1: agent=<agent> session=<session> parent=<parent>\n\nUse the actual runtime and hierarchical task path for agent, such as codex/root/routes. Separate at least two segments with /. Each segment matches [a-z0-9][a-z0-9_-]*. Generate one lowercase random UUIDv4 solely for public attribution when the session first needs it. Reuse it for continuations and retries of that session. Give each new session or fork a fresh UUID. The direct delegator passes its public UUID to the child, which records the actual direct parent’s UUID as parent, distinct from its own session UUID. A root session uses -. Keep private runtime IDs, tokens and credentials local.\n\nGitHub supplies the author account. The footer records the agent’s self-reported path and session. Use GitHub permissions and independent checks for authorization. Preserve the original author’s footer when editing an existing body. Other sessions contribute through comments with their own footers. Accept one qualifying footer at the end of the body. Ignore examples inside Markdown blockquotes, fenced code blocks and inline code. Record missing, malformed or multiple candidate footers as unknown, including on historical content."
+          }
+        }
+      ]
+    },
+    {
       "id": "collaboration.combine",
       "requires": [],
       "variants": [
@@ -2668,6 +2688,7 @@
             }
           ],
           "atoms": [
+            "collaboration.github-agent-identity",
             "collaboration.combine",
             "collaboration.current-result",
             "collaboration.handoff",
@@ -2939,6 +2960,7 @@
             }
           ],
           "atoms": [
+            "collaboration.github-agent-identity",
             "candidate.landing",
             "artifact.results",
             "artifact.cleanup"
