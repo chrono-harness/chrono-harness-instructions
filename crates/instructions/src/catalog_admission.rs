@@ -1,0 +1,92 @@
+//! Admission before a manifest or catalog can publish host guides.
+use std::collections::{BTreeMap, BTreeSet};
+#[cfg(not(verus_keep_ghost))]
+use verus_builtin_macros::verus;
+#[cfg(verus_keep_ghost)]
+use vstd::prelude::*;
+#[cfg(verus_keep_ghost)]
+use vstd::string::StringSliceAdditionalSpecFns;
+
+verus! {
+
+pub enum OutputError { DuplicateId, DuplicatePath, EmptyRoots }
+
+pub fn output<K: Ord>(
+    ids: &mut BTreeSet<K>, paths: &mut BTreeSet<K>, id: K, path: K, roots: usize,
+) -> (out: Result<(), OutputError>)
+    requires vstd::laws_cmp::obeys_cmp::<K>(),
+    ensures ids@ == old(ids)@.insert(id),
+        paths@ == if old(ids)@.contains(id) { old(paths)@ } else { old(paths)@.insert(path) },
+        match out {
+            Err(OutputError::DuplicateId) => old(ids)@.contains(id),
+            Err(OutputError::DuplicatePath) => !old(ids)@.contains(id) && old(paths)@.contains(path),
+            Err(OutputError::EmptyRoots) => !old(ids)@.contains(id) && !old(paths)@.contains(path) && roots == 0,
+            Ok(()) => !old(ids)@.contains(id) && !old(paths)@.contains(path) && roots > 0,
+        },
+{
+    if !ids.insert(id) { return Err(OutputError::DuplicateId); }
+    if !paths.insert(path) { return Err(OutputError::DuplicatePath); }
+    if roots == 0 { return Err(OutputError::EmptyRoots); }
+    Ok(())
+}
+
+pub fn root_output(root: bool, path: &[u8]) -> (out: Result<bool, &'static str>)
+    ensures match out {
+        Ok(is_root) => is_root == root && (path@ == "CLAUDE.md".spec_bytes()) == root,
+        Err(message) => if root { path@ != "CLAUDE.md".spec_bytes() && message@ == "root-guide path must be CLAUDE.md"@ }
+            else { path@ == "CLAUDE.md".spec_bytes() && message@ == "CLAUDE.md is reserved for root-guide"@ },
+    },
+{
+    if super::verified_bytes::equal(path, "CLAUDE.md".as_bytes()) {
+        if root { Ok(true) } else { Err("CLAUDE.md is reserved for root-guide") }
+    } else if root { Err("root-guide path must be CLAUDE.md") } else { Ok(false) }
+}
+
+pub fn finish_roots(count: usize) -> (out: Result<(), &'static str>)
+    ensures match out { Ok(()) => count == 1, Err(msg) => count != 1 && msg@ == "registration must contain exactly one root-guide"@ },
+{
+    if count == 1 { Ok(()) } else { Err("registration must contain exactly one root-guide") }
+}
+
+pub enum LocaleError { Duplicate, EmptyFrame }
+
+pub fn locale<K: Ord>(locales: &mut BTreeSet<K>, id: K, frame_empty: bool, notice_empty: bool)
+    -> (out: Result<(), LocaleError>)
+    requires vstd::laws_cmp::obeys_cmp::<K>(),
+    ensures locales@ == old(locales)@.insert(id),
+        match out {
+            Err(LocaleError::Duplicate) => old(locales)@.contains(id),
+            Err(LocaleError::EmptyFrame) => !old(locales)@.contains(id) && (frame_empty || notice_empty),
+            Ok(()) => !old(locales)@.contains(id) && !frame_empty && !notice_empty,
+        },
+{
+    if !locales.insert(id) { return Err(LocaleError::Duplicate); }
+    if frame_empty || notice_empty { return Err(LocaleError::EmptyFrame); }
+    Ok(())
+}
+
+pub fn register_atom<K: Ord, V>(atoms: &mut BTreeMap<K,V>, id: K, atom: V) -> (fresh: bool)
+    requires vstd::laws_cmp::obeys_cmp::<K>(),
+    ensures atoms@ == old(atoms)@.insert(id,atom), fresh == !old(atoms)@.contains_key(id),
+{
+    atoms.insert(id,atom).is_none()
+}
+
+pub enum VariantError { Unregistered, Duplicate }
+pub fn variant<K: Ord>(locales: &BTreeSet<K>, variants: &mut BTreeSet<K>, locale: K)
+    -> (out: Result<(), VariantError>)
+    requires vstd::laws_cmp::obeys_cmp::<K>(),
+    ensures variants@ == if locales@.contains(locale) { old(variants)@.insert(locale) } else { old(variants)@ },
+        match out {
+            Err(VariantError::Unregistered) => !locales@.contains(locale),
+            Err(VariantError::Duplicate) => locales@.contains(locale) && old(variants)@.contains(locale),
+            Ok(()) => locales@.contains(locale) && !old(variants)@.contains(locale),
+        },
+{
+    broadcast use vstd::std_specs::btree::axiom_set_contains_deref_key;
+    if !locales.contains(&locale) { return Err(VariantError::Unregistered); }
+    if !variants.insert(locale) { return Err(VariantError::Duplicate); }
+    Ok(())
+}
+
+}

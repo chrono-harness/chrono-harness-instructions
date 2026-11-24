@@ -51,6 +51,10 @@ grep -Fxq "test live_rule_selection_follows_upstream_and_preserves_local_work ..
   grep -Fxq "test root_guides_follow_published_selection_without_losing_host_text ... ok" "$scratch/tests.log" ||
   coverage_failure "the inherited rule consumers did not exercise selection and guide sync"
 
+grep -Fxq "test registered_guide_and_catalog_failures_preserve_the_entire_host ... ok" "$scratch/tests.log" &&
+  grep -Fxq "test catalog_admission_preserves_unique_names_and_first_errors ... ok" "$scratch/tests.log" ||
+  coverage_failure "the catalog admission and real guide consumer did not run successfully"
+
 # Read the exact library selected by Cargo in the build of the tested executable.
 metadata=$(jq -ers --arg manifest "$(pwd -P)/$product" '
   [.[] | select(.reason == "compiler-artifact" and .manifest_path == $manifest
@@ -60,5 +64,5 @@ metadata=$(jq -ers --arg manifest "$(pwd -P)/$product" '
 filename=${metadata##*/}
 stem=${filename#lib}
 stem=${metadata%/*}/${stem%.rmeta}
-chrono-host-bootstrap check-compiler-sources native "$stem" src/publication_decision.rs src/transaction.rs src/event_identity.rs src/github_event.rs src/rule_selection.rs src/verified_bytes.rs src/inherit.rs ||
+chrono-host-bootstrap check-compiler-sources native "$stem" src/publication_decision.rs src/transaction.rs src/event_identity.rs src/github_event.rs src/rule_selection.rs src/verified_bytes.rs src/inherit.rs src/catalog_admission.rs src/catalog.rs ||
   coverage_failure "native library differs from required sources"

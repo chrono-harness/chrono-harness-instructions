@@ -18,6 +18,37 @@ fn expect(value: bool)
 { if !value { panic!(); } }
 
 #[cfg_attr(not(verus_keep_ghost), test)]
+fn catalog_admission_preserves_unique_names_and_first_errors() {
+    use policy::catalog_admission::*;
+    use std::collections::{BTreeMap, BTreeSet};
+    let mut ids = BTreeSet::new();
+    let mut paths = BTreeSet::new();
+    let first = output(&mut ids,&mut paths,1u8,2u8,1); expect(first.is_ok());
+    let duplicate = output(&mut ids,&mut paths,1u8,2u8,0);
+    expect(matches!(duplicate,Err(OutputError::DuplicateId)));
+    let path = output(&mut ids,&mut paths,3u8,2u8,0);
+    expect(matches!(path,Err(OutputError::DuplicatePath)));
+    let empty = output(&mut ids,&mut paths,4u8,9u8,0);
+    expect(matches!(empty,Err(OutputError::EmptyRoots)));
+    let root = root_output(true,"CLAUDE.md".as_bytes()); expect(matches!(root,Ok(true)));
+    let reserved = root_output(false,"CLAUDE.md".as_bytes()); expect(reserved.is_err());
+    let missing = finish_roots(0); expect(missing.is_err());
+    let one = finish_roots(1); expect(one.is_ok());
+    let two = finish_roots(2); expect(two.is_err());
+    let mut locales = BTreeSet::new();
+    let good = locale(&mut locales,1u8,false,false); expect(good.is_ok());
+    let repeated = locale(&mut locales,1u8,true,true); expect(matches!(repeated,Err(LocaleError::Duplicate)));
+    let bad_frame = locale(&mut locales,2u8,true,false); expect(matches!(bad_frame,Err(LocaleError::EmptyFrame)));
+    let mut atoms: BTreeMap<u8,u8> = BTreeMap::new();
+    let new = register_atom(&mut atoms,1,20); expect(new);
+    let known = register_atom(&mut atoms,1,30); expect(!known);
+    let mut variants = BTreeSet::new();
+    let unpublished = variant(&locales,&mut variants,3); expect(matches!(unpublished,Err(VariantError::Unregistered)));
+    let declared = variant(&locales,&mut variants,1); expect(declared.is_ok());
+    let duplicate_variant = variant(&locales,&mut variants,1); expect(matches!(duplicate_variant,Err(VariantError::Duplicate)));
+}
+
+#[cfg_attr(not(verus_keep_ghost), test)]
 fn upstream_rows_preserve_mode_and_identity() {
     use policy::{Mode,Row};
     expect(policy::needs_feed(&Mode::All,0));

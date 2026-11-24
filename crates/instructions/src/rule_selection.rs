@@ -9,6 +9,9 @@ use verus_builtin_macros::verus;
 #[cfg(verus_keep_ghost)]
 use vstd::prelude::*;
 
+#[path = "catalog_admission.rs"]
+pub mod catalog_admission;
+
 verus! {
 
 pub enum Mode { All, Only, Off }
