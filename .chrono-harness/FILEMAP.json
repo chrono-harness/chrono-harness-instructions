@@ -182,7 +182,24 @@
       "owner": "host",
       "surface": "product",
       "cost": "unmeasured",
-      "edges": []
+      "edges": [
+        {
+          "kind": "test-execution",
+          "to": "test:instructions-tests"
+        }
+      ]
+    },
+    {
+      "path": ".github/workflows/publish-rules.yml",
+      "owner": "host",
+      "surface": "product",
+      "cost": "unmeasured",
+      "edges": [
+        {
+          "kind": "test-execution",
+          "to": "test:instructions-tests"
+        }
+      ]
     },
     {
       "path": ".github/workflows/release.yml",

@@ -2,8 +2,8 @@
   "schema": "chrono-github-units/v1",
   "collection": {
     "schema": "chrono-github-ci/v4",
-    "workflow_path": ".github/workflows/chrono-ci.yml",
-    "name": "Instructions / aggregate",
+    "workflow_path": ".github/workflows/check.yml",
+    "name": "check",
     "runs_on": "macos-15",
     "push_branches": [
       "dev",
@@ -69,7 +69,7 @@
       ],
       "sparse_checkout": [
         ".chrono-harness/",
-        ".github/workflows/chrono-ci.yml",
+        ".github/workflows/check.yml",
         ".config/mise/conf.d/"
       ]
     },
