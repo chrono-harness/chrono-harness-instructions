@@ -33,6 +33,7 @@
         "test.same-language",
         "evidence.program-state",
         "job.wait",
+        "collaboration.github-agent-identity",
         "candidate.landing",
         "artifact.results",
         "artifact.cleanup"
