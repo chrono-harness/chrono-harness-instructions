@@ -1496,6 +1496,26 @@
       ]
     },
     {
+      "id": "collaboration.github-contribution",
+      "requires": [],
+      "variants": [
+        {
+          "locale": "zh-CN",
+          "source": {
+            "type": "inline",
+            "text": "普通 Issue 按主要诉求选择一个主标签：缺陷用 `bug`，功能或改进用 `enhancement`，文档用 `documentation`，问题用 `question`。发布失败沿用专用 `release-failure`。分支从 `dev` 创建，选 `feature/` 或 `integration/`，后接英文小写连字符短语；有本仓 Issue 时在短语前加编号和连字符。日常 PR 以 `dev` 为目标，正式版使用 `main`。PR 标题采用 `type(scope): 结果`，正文用 `Refs #编号` 关联工作，合入默认分支即可满足全部验收时用 `Closes #编号`；仍需发布、落地 CI 或下游采用时用 `Refs`，取得证据后关闭。跨仓引用写完整仓库名和编号。\n\n[组织协作规范](https://github.com/chrono-harness/chrono-harness-main/blob/dev/docs/contributing.md)"
+          }
+        },
+        {
+          "locale": "en",
+          "source": {
+            "type": "inline",
+            "text": "Choose one primary label for an ordinary issue: `bug`, `enhancement`, `documentation`, or `question`. Keep the dedicated `release-failure` label for release failures. Start from `dev`. Use `feature/` or `integration/`, followed by a lowercase English hyphenated slug. Prefix the slug with the local issue number and a hyphen when applicable. Target `dev` for ordinary pull requests and use `main` for stable releases. Title a PR `type(scope): outcome`. Use `Refs #number` for related work. Use `Closes #number` when landing on the default branch satisfies all acceptance criteria. For pending releases, landed CI, or downstream adoption, use `Refs` and close after observing the required results. Qualify cross-repository references with the repository name.\n\n[Organization contribution guide](https://github.com/chrono-harness/chrono-harness-main/blob/dev/docs/contributing.md)"
+          }
+        }
+      ]
+    },
+    {
       "id": "collaboration.combine",
       "requires": [],
       "variants": [
@@ -2689,6 +2709,7 @@
           ],
           "atoms": [
             "collaboration.github-agent-identity",
+            "collaboration.github-contribution",
             "collaboration.combine",
             "collaboration.current-result",
             "collaboration.handoff",
@@ -2961,6 +2982,7 @@
           ],
           "atoms": [
             "collaboration.github-agent-identity",
+            "collaboration.github-contribution",
             "candidate.landing",
             "artifact.results",
             "artifact.cleanup"

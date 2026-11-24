@@ -2,6 +2,8 @@
 
 组件的用途、开发仓库和示例见 [Chrono Harness 用户与开发者入口](https://github.com/chrono-harness/chrono-harness-main)。
 
+Issue、分支和 PR 的分类及命名见[组织协作规范](https://github.com/chrono-harness/chrono-harness-main/blob/dev/docs/contributing.md)。
+
 本仓维护基础 agent 指令、按规则 ID 选择的协议和 chrono-instructions 生成工具。
 
 ## 本仓开发
