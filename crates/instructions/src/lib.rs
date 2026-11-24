@@ -1,6 +1,7 @@
 //! Explicit host instruction generation. No judge execution or host discovery.
 
 mod catalog;
+pub mod github_event;
 mod inherit;
 #[doc(hidden)]
 pub mod publication_decision;
@@ -783,6 +784,14 @@ pub fn dispatch(args: &[OsString]) -> CliOutput {
         stdout,
         stderr,
     };
+    if let [op] = args
+        && let Some(op @ ("event-regex" | "event-read" | "event-format")) = op.to_str()
+    {
+        return match github_event::command(op, std::io::stdin().lock()) {
+            Ok(output) => reply(0, output, String::new()),
+            Err(error) => reply(1, String::new(), format!("E_GITHUB_EVENT: {error}\n")),
+        };
+    }
     let rule_result = match args {
         [op, flag, host] if op == "sync-rules" && flag == "--host-root" => {
             Some(inherit::sync(Path::new(host), inherit::fetch).map(|_| String::new()))
@@ -802,7 +811,7 @@ pub fn dispatch(args: &[OsString]) -> CliOutput {
     if args.is_empty()
         || (args.len() == 1 && ["help", "--help", "-h"].iter().any(|a| args[0] == *a))
     {
-        return reply(0, "Usage:\n  chrono-instructions sync-rules --host-root H\n  chrono-instructions rules --host-root H\n  chrono-instructions publish-rules\n  chrono-instructions init --host-root H [--methodology M] [--host-context C] [--locale L]\n  chrono-instructions generate --host-root H\nH must be an existing directory. New init adopts embedded atomic rules (zh-CN default) and empty context. --locale binds the fresh root; --methodology retains one opaque file atom (und unless explicitly bound). Registered init retains existing canonical sources for omitted options; explicit differing inputs fail. Optional M/C must be readable UTF-8 regular files. Edit the registered catalog and output plan, then generate root guides, Markdown and skills. AGENTS.md -> CLAUDE.md remains a literal relative alias. Unix only. No host inference or runtime checkout required. Exit 0 complete, 2 usage, 1 generation/IO failure. No judges run.\n".into(), String::new());
+        return reply(0, "Usage:\n  chrono-instructions event-regex | event-read | event-format\n  chrono-instructions sync-rules --host-root H\n  chrono-instructions rules --host-root H\n  chrono-instructions publish-rules\n  chrono-instructions init --host-root H [--methodology M] [--host-context C] [--locale L]\n  chrono-instructions generate --host-root H\nH must be an existing directory. New init adopts embedded atomic rules (zh-CN default) and empty context. --locale binds the fresh root; --methodology retains one opaque file atom (und unless explicitly bound). Registered init retains existing canonical sources for omitted options; explicit differing inputs fail. Optional M/C must be readable UTF-8 regular files. Edit the registered catalog and output plan, then generate root guides, Markdown and skills. AGENTS.md -> CLAUDE.md remains a literal relative alias. Unix only. No host inference or runtime checkout required. Exit 0 complete, 2 usage, 1 generation/IO failure. No judges run.\n".into(), String::new());
     }
     if args.len() == 1 && args[0] == "--version" {
         return reply(

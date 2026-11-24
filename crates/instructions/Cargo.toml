@@ -31,3 +31,5 @@ tempfile = "3"
 sha2 = "0.10"
 verus_builtin_macros = "=0.0.0-2026-04-20-1748"
 libc = "0.2"
+pulldown-cmark = { version = "0.13", default-features = false }
+regex = { version = "1.12", default-features = false, features = ["std", "perf"] }

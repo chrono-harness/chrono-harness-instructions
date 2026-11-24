@@ -18,3 +18,7 @@ path = "tests/generation.rs"
 [[test]]
 name = "publication_decision"
 path = "tests/publication_decision.rs"
+
+[[test]]
+name = "github_event"
+path = "tests/github_event.rs"
