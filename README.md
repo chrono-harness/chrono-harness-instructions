@@ -30,3 +30,5 @@
 选择按完整 ID 匹配。上游修改同一 ID 的文字会随下次读取生效。已移除的 ID 自动失效。关闭和空白名单均可离线使用。可在[公共规则数据](https://raw.githubusercontent.com/chrono-harness/chrono-harness-instructions/published-rules/rules.json)查看当前可选 ID。
 
 上游维护者修改产品的 catalog 或默认 manifest 后，dev 的检查通过即自动发布规则。下游无需更新二进制、模板或提交。维护自己完整登记的项目也可继续使用 init 和 generate。
+
+事务生成的正式检查同时收取产品和专属测试的 Verus 原件，并执行中途发布失败的回滚用例。该用例通过独立测试构建观察当前线程实际进入 `publication_decision::repair`，同时验证宿主文件恢复。移除这次生产调用会让用例报告 `E_VERUS_COVERAGE`。本项覆盖被执行的回滚场景。优化后的发行二进制及其他函数的实际调用覆盖仍须分别验收。

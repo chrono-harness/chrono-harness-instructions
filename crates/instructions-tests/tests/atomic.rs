@@ -692,7 +692,14 @@ fn late_extra_output_failure_rolls_back_nested_directories_and_prior_outputs() {
         add_skill(&mut m);
         put(&host, MANIFEST, &m);
         let before = host.snapshot();
-        let err = test_support::generate_with_failure(&host.root, after, None).unwrap_err();
+        let (result, called) = test_support::with_repair_observation(|| {
+            test_support::generate_with_failure(&host.root, after, None)
+        });
+        assert!(
+            called,
+            "E_VERUS_COVERAGE: rollback did not call the proved repair decision"
+        );
+        let err = result.unwrap_err();
         assert!(
             err.contains("injected publication failure") && err.contains("unrestored=[]"),
             "{err}"

@@ -22,12 +22,17 @@ done
 export CARGO_NET_OFFLINE=true
 cargo build --locked --message-format=json-render-diagnostics --target-dir "$scratch/product" --manifest-path "$product" > "$scratch/build.jsonl"
 export CHRONO_TEST_INSTRUCTIONS="$scratch/product/debug/chrono-instructions"
-cargo test --locked --target-dir "$scratch/tests" --manifest-path "$tests"
 
 coverage_failure() {
   echo "E_VERUS_COVERAGE: $*" >&2
   exit 1
 }
+
+# Cargo exits zero when a registered consumer has been removed or ignored.
+consumer=atomic::late_extra_output_failure_rolls_back_nested_directories_and_prior_outputs
+cargo test --color never --locked --target-dir "$scratch/tests" --manifest-path "$tests" -- --format pretty | tee "$scratch/tests.log"
+grep -Fxq "test $consumer ... ok" "$scratch/tests.log" ||
+  coverage_failure "the required transaction rollback consumer did not run successfully"
 
 verifier=$(command -v "${VERUS:-verus}") || coverage_failure "registered verifier was not found"
 
