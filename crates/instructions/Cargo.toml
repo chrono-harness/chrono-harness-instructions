@@ -31,12 +31,3 @@ tempfile = "3"
 sha2 = "0.10"
 verus_builtin_macros = "=0.0.0-2026-04-20-1748"
 libc = "0.2"
-
-[[test]]
-name = "generation"
-path = "tests/generation.rs"
-required-features = ["test-support"]
-
-[[test]]
-name = "publication_decision"
-path = "tests/publication_decision.rs"

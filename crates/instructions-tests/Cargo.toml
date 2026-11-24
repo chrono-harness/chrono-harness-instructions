@@ -1,0 +1,20 @@
+[package]
+name = "chrono-instructions-tests"
+version = "0.1.0"
+edition = "2024"
+publish = false
+autotests = false
+
+[dev-dependencies]
+chrono-instructions = { path = "../instructions", features = ["test-support"] }
+serde_json = "1"
+tempfile = "3"
+verus_builtin_macros = "=0.0.0-2026-04-20-1748"
+
+[[test]]
+name = "generation"
+path = "tests/generation.rs"
+
+[[test]]
+name = "publication_decision"
+path = "tests/publication_decision.rs"

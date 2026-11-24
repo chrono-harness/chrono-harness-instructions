@@ -5,22 +5,24 @@ mkdir -p target
 scratch=$(mktemp -d "$(pwd -P)/target/check.XXXXXXXX")
 trap 'rm -rf -- "$scratch"' EXIT
 export TMPDIR="$scratch"
-export CARGO_TARGET_DIR="$scratch/cargo"
-# Only this product may come from a local path. Check the resolved graph used
-# by the binary and its test fixture, then run Cargo offline from that point.
-cargo metadata --locked --all-features --manifest-path crates/instructions/Cargo.toml --format-version 1 > "$scratch/dependencies.json"
-jq -e --arg product "$(pwd -P)/crates/instructions/Cargo.toml" '
-  all(.packages[];
-    if .source == null then .manifest_path == $product
-    elif (.source | startswith("registry+")) then true
-    elif (.source | startswith("git+")) then
-      (.source | test("github\\.com[:/]((chrono-harness/)|(ChronoAIProject/chrono-harness([./?#]|$)))"; "i") | not)
-    else false end)
-' "$scratch/dependencies.json" >/dev/null || { echo 'unexpected source in the product or test dependency graph' >&2; exit 1; }
+product=crates/instructions/Cargo.toml
+tests=crates/instructions-tests/Cargo.toml
+for manifest in "$product" "$tests"; do
+  cargo metadata --locked --all-features --manifest-path "$manifest" --format-version 1 > "$scratch/dependencies.json"
+  jq -e --arg product "$(pwd -P)/$product" --arg manifest "$(pwd -P)/$manifest" '
+    all(.packages[];
+      if .source == null then (.manifest_path == $product or .manifest_path == $manifest)
+      elif (.source | startswith("registry+")) then true
+      elif (.source | startswith("git+")) then
+        (.source | test("github\\.com[:/]((chrono-harness/)|(ChronoAIProject/chrono-harness([./?#]|$)))"; "i") | not)
+      else false end)
+  ' "$scratch/dependencies.json" >/dev/null || { echo "unexpected dependency source in $manifest" >&2; exit 1; }
+  cargo fmt --check --manifest-path "$manifest"
+done
 export CARGO_NET_OFFLINE=true
-cargo fmt --check --manifest-path crates/instructions/Cargo.toml
-cargo build --locked --manifest-path crates/instructions/Cargo.toml
-cargo test --locked --features test-support --manifest-path crates/instructions/Cargo.toml
+cargo build --locked --target-dir "$scratch/product" --manifest-path "$product"
+export CHRONO_TEST_INSTRUCTIONS="$scratch/product/debug/chrono-instructions"
+cargo test --locked --target-dir "$scratch/tests" --manifest-path "$tests"
 
 prove() {
   local label=$1 root=$2
@@ -38,4 +40,4 @@ prove() {
 }
 
 prove verify.instructions-publication crates/instructions/src/publication_decision.rs
-prove verify.instructions-publication-tests crates/instructions/tests/publication_decision.rs
+prove verify.instructions-publication-tests crates/instructions-tests/tests/publication_decision.rs
