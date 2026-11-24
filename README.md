@@ -59,3 +59,5 @@ event-format 接受 agent、session、parent、task、event、action、state、t
 用 `event-read` 读取 GitHub API 的原始 body，正文可用 LF 或 CRLF，末尾可有一个换行。读取器识别 Markdown 顶层结构，核对记录唯一、完整、位于文末且 UUID 各自独立。引述、围栏和嵌套 HTML 示例中的内容按正文处理。历史 v2 仍可读取。保存事件时连同 GitHub 作者、原始对象 URL 和创建时间一起保存。
 
 `event-regex` 提供Python、PCRE2 和 JavaScript 均可使用的跨行表达式，匹配完整的三行内容，捕获组 1 到 8 依次为 event、session、parent、task、agent、action、state、target。`\1` 要求末行 UUID 与首行逐字一致。各环境关闭多行、忽略大小写和 dotall 模式。比如在 Python 中可使用 `re.fullmatch(pattern.rstrip("\n"), frame, flags=re.ASCII).groups()`。应从 Markdown 中识别出顶层候选后再匹配。正文原样复制仍能通过语法校验。[可复制正则](assets/instructions/github-event-v3.regex) · [完整规则](assets/instructions/catalog.json)
+
+工作事件的 Verus 证明覆盖实际捕获字节的两个决定：v3 结束标记须重复开头的 event，session、parent、task 和 event 两两不同。历史 v2 传入四个原始 ID。登记检查同时收取生产根、独立测试根和实际读取器的反例结果。GFM 结构由 pulldown-cmark 提供，字段词法和捕获由 regex 提供，其余边界见上述协议。

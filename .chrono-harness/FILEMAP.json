@@ -342,6 +342,27 @@
       ]
     },
     {
+      "path": "crates/instructions-tests/tests/event_identity.rs",
+      "owner": "instructions-tests",
+      "surface": "test",
+      "cost": "unmeasured",
+      "edges": [
+        {
+          "kind": "test-execution",
+          "to": "test:instructions-tests"
+        }
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions-tests/tests/event_identity.rs",
+            "operation": "verify.instructions-event-identity-tests"
+          }
+        ]
+      }
+    },
+    {
       "path": "crates/instructions-tests/tests/generation.rs",
       "owner": "instructions-tests",
       "surface": "test",
@@ -421,6 +442,31 @@
           "to": "test:instructions-tests"
         }
       ]
+    },
+    {
+      "path": "crates/instructions/src/event_identity.rs",
+      "owner": "instructions",
+      "surface": "product",
+      "cost": "unmeasured",
+      "edges": [
+        {
+          "kind": "test-execution",
+          "to": "test:instructions-tests"
+        }
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions/src/event_identity.rs",
+            "operation": "verify.instructions-event-identity"
+          },
+          {
+            "path": "crates/instructions-tests/tests/event_identity.rs",
+            "operation": "verify.instructions-event-identity-tests"
+          }
+        ]
+      }
     },
     {
       "path": "crates/instructions/src/github_event.rs",
@@ -567,6 +613,8 @@
       "operations": [
         "verify.instructions-publication",
         "verify.instructions-publication-tests",
+        "verify.instructions-event-identity",
+        "verify.instructions-event-identity-tests",
         "instructions.owner-check"
       ],
       "timeout_seconds": 600,
