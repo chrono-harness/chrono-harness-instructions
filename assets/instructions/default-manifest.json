@@ -34,6 +34,7 @@
         "evidence.program-state",
         "job.wait",
         "collaboration.github-agent-identity",
+        "collaboration.github-contribution",
         "candidate.landing",
         "artifact.results",
         "artifact.cleanup"
