@@ -32,3 +32,18 @@
 上游维护者修改产品的 catalog 或默认 manifest 后，dev 的检查通过即自动发布规则。下游无需更新二进制、模板或提交。维护自己完整登记的项目也可继续使用 init 和 generate。
 
 事务生成的正式检查同时收取产品和专属测试的 Verus 原件，并执行中途发布失败的回滚用例。该用例通过独立测试构建观察当前线程实际进入 `publication_decision::repair`，同时验证宿主文件恢复。移除这次生产调用会让用例报告 `E_VERUS_COVERAGE`。本项覆盖被执行的回滚场景。优化后的发行二进制及其他函数的实际调用覆盖仍须分别验收。
+
+
+## GitHub 工作事件
+
+每个会话用固定的公开 session，每项工作用同一个 task，每次状态变化得到新的 event。用 GitHub API 读取原始 body。下列命令输出转换失败时退出 1，成功时退出 0。
+
+~~~sh
+chrono-instructions event-format < event.json
+gh api repos/OWNER/REPO/issues/NUMBER | jq -j .body | chrono-instructions event-read
+chrono-instructions event-regex
+~~~
+
+event-format 接受 agent、session、parent、task、event、action、state、target 八个字符串组成的 JSON 对象。原始 API body 可能已自带末尾换行；对机器输入请保留原始字节，例如用 jq -j '.body' 提取。[完整规则](assets/instructions/catalog.json) · [可复制正则](assets/instructions/github-event-v2.regex)
+
+正则读取单行，按顺序捕获八个字段。开启 ASCII，大小写敏感，关闭多行，以 fullmatch 或等价的整串比较应用。正文先将 CRLF 转为 LF，拒绝孤立 CR 和两个及以上末尾换行；最终一条必须是顶层普通段落，前方若有正文须有空行。代码、引述、HTML 注释与嵌套段落中的示例不作签名。读取器同样检查 UUID 独立性。每条记录保留 GitHub 作者、原始对象 URL 和创建时间。精确复制一条合法事件会通过语法检查。
