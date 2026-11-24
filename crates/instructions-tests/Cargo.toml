@@ -26,3 +26,7 @@ path = "tests/github_event.rs"
 [[test]]
 name = "event_identity"
 path = "tests/event_identity.rs"
+
+[[test]]
+name = "rule_selection"
+path = "tests/rule_selection.rs"

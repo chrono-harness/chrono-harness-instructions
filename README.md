@@ -61,3 +61,5 @@ event-format 接受 agent、session、parent、task、event、action、state、t
 `event-regex` 提供Python、PCRE2 和 JavaScript 均可使用的跨行表达式，匹配完整的三行内容，捕获组 1 到 8 依次为 event、session、parent、task、agent、action、state、target。`\1` 要求末行 UUID 与首行逐字一致。各环境关闭多行、忽略大小写和 dotall 模式。比如在 Python 中可使用 `re.fullmatch(pattern.rstrip("\n"), frame, flags=re.ASCII).groups()`。应从 Markdown 中识别出顶层候选后再匹配。正文原样复制仍能通过语法校验。[可复制正则](assets/instructions/github-event-v3.regex) · [完整规则](assets/instructions/catalog.json)
 
 工作事件的 Verus 证明覆盖实际捕获字节的两个决定：v3 结束标记须重复开头的 event，session、parent、task 和 event 两两不同。历史 v2 传入四个原始 ID。登记检查同时收取生产根、独立测试根和实际读取器的反例结果。GFM 结构由 pulldown-cmark 提供，字段词法和捕获由 regex 提供，其余边界见上述协议。
+
+上游规则的选择由正式检查收取生产及独立预期证明。规则 ID 和上游重复行按完整字节比较，选中条目保持上游顺序。关闭或空单选可离线使用。同步前检查输出是否包含受宿主管理的界标，失败时保留原指南。JSON 解码、Unicode 去首尾空白、树集合按键查询、网络和文件事务按各自边界工作。

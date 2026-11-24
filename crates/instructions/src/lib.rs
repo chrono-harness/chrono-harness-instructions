@@ -6,7 +6,9 @@ pub mod github_event;
 mod inherit;
 #[doc(hidden)]
 pub mod publication_decision;
+pub mod rule_selection;
 mod transaction;
+mod verified_bytes;
 
 use catalog::{Atom, Catalog, Content, Format, Manifest, Variant};
 use std::collections::{BTreeMap, BTreeSet};

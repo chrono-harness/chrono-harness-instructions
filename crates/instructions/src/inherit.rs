@@ -1,4 +1,5 @@
 use super::catalog::{self, Catalog, Content, Manifest};
+use crate::rule_selection::{self, Mode, Row};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, fs, io, path::Path, process::Command};
 
@@ -51,11 +52,11 @@ impl Selection {
         }
     }
 
-    fn accepts(&self, id: &str) -> bool {
+    fn policy(&self) -> (Mode, Option<&BTreeSet<String>>) {
         match self {
-            Self::All { exclude } => !exclude.contains(id),
-            Self::Only { include } => include.contains(id),
-            Self::Off => false,
+            Self::All { exclude } => (Mode::All, Some(exclude)),
+            Self::Only { include } => (Mode::Only, Some(include)),
+            Self::Off => (Mode::Off, None),
         }
     }
 }
@@ -112,27 +113,35 @@ fn read_selected(
     selection: Selection,
     fetch: impl FnOnce() -> Result<Vec<u8>, String>,
 ) -> Result<String, String> {
-    if matches!(&selection, Selection::Off)
-        || matches!(&selection, Selection::Only { include } if include.is_empty())
-    {
+    let (mode, names) = selection.policy();
+    if !rule_selection::needs_feed(&mode, names.map_or(0, BTreeSet::len)) {
         return Ok(String::new());
     }
     let feed: Feed =
         serde_json::from_slice(&fetch()?).map_err(|e| format!("invalid upstream rules: {e}"))?;
-    if feed.schema != SCHEMA {
+    if !rule_selection::schema(feed.schema.as_bytes(), SCHEMA.as_bytes()) {
         return Err(format!("unsupported rules schema: {}", feed.schema));
     }
     let mut ids = BTreeSet::new();
     let mut result = String::new();
     for rule in feed.rules {
-        if rule.id.is_empty() || rule.text.trim().is_empty() || !ids.insert(rule.id.clone()) {
-            return Err(format!("empty or duplicate upstream rule: {}", rule.id));
-        }
-        if selection.accepts(&rule.id) {
-            if result.is_empty() {
-                result = format!("{}\n", feed.notice);
+        let previous = ids.replace(rule.id.clone());
+        let listed = names.and_then(|names| names.get(&rule.id));
+        match rule_selection::row(
+            &mode,
+            rule.id.as_bytes(),
+            rule.text.trim().as_bytes(),
+            listed.map(String::as_bytes),
+            previous.as_ref().map(String::as_bytes),
+        ) {
+            Row::Invalid => return Err(format!("empty or duplicate upstream rule: {}", rule.id)),
+            Row::Omit => (),
+            Row::Publish => {
+                if result.is_empty() {
+                    result = format!("{}\n", feed.notice);
+                }
+                result.push_str(&format!("\n## {}\n\n{}\n", rule.id, rule.text));
             }
-            result.push_str(&format!("\n## {}\n\n{}\n", rule.id, rule.text));
         }
     }
     Ok(result)
@@ -160,11 +169,7 @@ pub(super) fn sync(
             },
         };
         let text = read_selected(selection, fetch)?;
-        if text
-            .as_bytes()
-            .windows(RESERVED.len())
-            .any(|w| w == RESERVED)
-        {
+        if !rule_selection::safe_projection(text.as_bytes(), RESERVED) {
             return Err("upstream rules contain reserved guide delimiters".into());
         }
         let mut block = BEGIN.to_vec();

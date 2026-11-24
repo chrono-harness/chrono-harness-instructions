@@ -4,29 +4,18 @@ use verus_builtin_macros::verus;
 #[cfg(verus_keep_ghost)]
 use vstd::prelude::*;
 
+#[cfg(verus_keep_ghost)]
+#[path = "verified_bytes.rs"]
+mod verified_bytes;
+#[cfg(not(verus_keep_ghost))]
+use crate::verified_bytes;
+
 verus! {
 
 pub enum Identity {
     Valid,
     ClosingMismatch,
     ReusedId,
-}
-
-fn same_id(left: &[u8], right: &[u8]) -> (same: bool)
-    ensures same == (left@ == right@),
-{
-    if left.len() != right.len() { return false; }
-    let mut i = 0;
-    while i < left.len()
-        invariant i <= left.len(), left.len() == right.len(),
-            forall|j: int| 0 <= j < i ==> left@[j] == right@[j],
-        decreases left.len() - i,
-    {
-        if left[i] != right[i] { return false; }
-        i += 1;
-    }
-    assert(left@ =~= right@);
-    true
 }
 
 /// A v3 closing ID repeats the opening event. The four identity roles must be independent.
@@ -40,10 +29,10 @@ pub fn identity(session: &[u8], parent: &[u8], task: &[u8], event: &[u8], closin
         (verdict is Valid) == (!(verdict is ClosingMismatch) && !(verdict is ReusedId)),
 {
     if let Some(end) = closing {
-        if !same_id(event, end) { return Identity::ClosingMismatch; }
+        if !verified_bytes::equal(event, end) { return Identity::ClosingMismatch; }
     }
-    if same_id(session, parent) || same_id(session, task) || same_id(session, event)
-        || same_id(parent, task) || same_id(parent, event) || same_id(task, event) {
+    if verified_bytes::equal(session, parent) || verified_bytes::equal(session, task) || verified_bytes::equal(session, event)
+        || verified_bytes::equal(parent, task) || verified_bytes::equal(parent, event) || verified_bytes::equal(task, event) {
         return Identity::ReusedId;
     }
     Identity::Valid
