@@ -1,4 +1,5 @@
 //! Optional, bounded instruction-command logs. Each tool owns its own files.
+use chrono_instructions::publication_decision::{LogWrite, event_fits, log_write};
 use file_rotate::{ContentLimit, FileRotate, compression::Compression, suffix::AppendCount};
 use serde::Deserialize;
 use serde_json::json;
@@ -104,7 +105,7 @@ impl Log {
             "message":message,"fields":{"exit_code":exit}});
         let mut bytes = serde_json::to_vec(&row)?;
         bytes.push(b'\n');
-        if bytes.len() > self.policy.max_bytes {
+        if !event_fits(bytes.len() as u64, self.policy.max_bytes as u64) {
             return Err(io::Error::other("log event exceeds file size bound"));
         }
         let directory = fs::File::open(&self.directory)?;
@@ -116,15 +117,26 @@ impl Log {
             Err(e) if e.kind() == io::ErrorKind::NotFound => 0,
             Err(e) => return Err(e),
         };
-        if length.saturating_add(bytes.len() as u64) > self.policy.max_bytes as u64 {
-            FileRotate::new(
-                &path,
-                AppendCount::new(self.policy.max_files - 1),
-                ContentLimit::None,
-                Compression::None,
-                None,
-            )
-            .rotate()?;
+        match log_write(
+            length,
+            bytes.len() as u64,
+            self.policy.max_bytes as u64,
+            self.policy.max_files,
+        ) {
+            LogWrite::TooLarge => {
+                return Err(io::Error::other("log event exceeds file size bound"));
+            }
+            LogWrite::Append => {}
+            LogWrite::Rotate { archived_files } => {
+                FileRotate::new(
+                    &path,
+                    AppendCount::new(archived_files),
+                    ContentLimit::None,
+                    Compression::None,
+                    None,
+                )
+                .rotate()?;
+            }
         }
         use std::os::unix::fs::OpenOptionsExt;
         fs::OpenOptions::new()

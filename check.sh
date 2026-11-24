@@ -55,6 +55,10 @@ grep -Fxq "test registered_guide_and_catalog_failures_preserve_the_entire_host .
   grep -Fxq "test catalog_admission_preserves_unique_names_and_first_errors ... ok" "$scratch/tests.log" ||
   coverage_failure "the catalog admission and real guide consumer did not run successfully"
 
+grep -Fxq "test whole_log_events_roll_only_after_the_last_available_byte ... ok" "$scratch/tests.log" &&
+  grep -Fxq "test opted_in_instruction_logs_rotate_whole_events_inside_their_own_directory ... ok" "$scratch/tests.log" ||
+  coverage_failure "the log write proof expectations and CLI rollover did not both pass"
+
 # Read the exact library selected by Cargo in the build of the tested executable.
 metadata=$(jq -ers --arg manifest "$(pwd -P)/$product" '
   [.[] | select(.reason == "compiler-artifact" and .manifest_path == $manifest
