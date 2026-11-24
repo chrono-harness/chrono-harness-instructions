@@ -1,7 +1,7 @@
 //! 与 IO 实现独立的恢复、释放边界预期；同源 Verus 和 Rust 均执行。
 #![allow(unexpected_cfgs)]
 #[cfg(verus_keep_ghost)]
-#[path = "../src/publication_decision.rs"]
+#[path = "../../instructions/src/publication_decision.rs"]
 mod policy;
 #[cfg(not(verus_keep_ghost))]
 use chrono_instructions::publication_decision as policy;

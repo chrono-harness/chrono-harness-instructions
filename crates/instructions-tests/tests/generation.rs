@@ -794,13 +794,16 @@ fn runtime_policy(host: &Host, max_bytes: u64, max_files: usize) {
 }
 
 fn run_cli(cwd: &Path, args: &[OsString]) -> (u32, Output) {
-    let child = Command::new(env!("CARGO_BIN_EXE_chrono-instructions"))
-        .args(args)
-        .current_dir(cwd)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let child = Command::new(
+        std::env::var_os("CHRONO_TEST_INSTRUCTIONS")
+            .expect("check.sh provides the built chrono-instructions binary"),
+    )
+    .args(args)
+    .current_dir(cwd)
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .unwrap();
     let pid = child.id();
     (pid, child.wait_with_output().unwrap())
 }
