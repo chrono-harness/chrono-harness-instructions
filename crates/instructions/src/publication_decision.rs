@@ -27,6 +27,20 @@ pub(crate) mod observation {
 
 verus! {
 
+/// Preserve the original logging error only when the command streams were delivered.
+pub fn finish_cli<E>(streams_written: bool, log_error: Option<E>, business: u8)
+    -> (result: (u8, Option<E>))
+    ensures
+        result.0 == if !streams_written { 1u8 } else if log_error.is_some() { 2u8 } else { business },
+        result.1 == if streams_written { log_error } else { None },
+{
+    if !streams_written { return (1, None); }
+    match log_error {
+        Some(error) => (2, Some(error)),
+        None => (business, None),
+    }
+}
+
 pub fn event_fits(bytes: u64, limit: u64) -> (fits: bool)
     ensures fits == (bytes <= limit),
 {
