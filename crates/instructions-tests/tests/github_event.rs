@@ -191,6 +191,16 @@ fn v3_read_preserves_its_correlations_and_uses_unknown_for_the_unrecorded_model(
         event.target,
         id = event.event
     );
+    for altered in [
+        old.replacen(":v3 ", ":v30 ", 1),
+        old.replacen(":v3 ", ":v4 ", 1),
+    ] {
+        assert_eq!(parse(&altered).unwrap_err(), "unknown: malformed v4 frame");
+    }
+    assert_eq!(
+        parse(&old.replacen(" event=", " X=", 1)).unwrap_err(),
+        "unknown: malformed v3 frame"
+    );
     let parsed = parse(&old).unwrap();
     assert_eq!(serde_json::to_value(&parsed).unwrap()["model"], "unknown");
     assert_eq!(parsed, event);
