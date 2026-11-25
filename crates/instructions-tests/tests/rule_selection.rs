@@ -22,7 +22,8 @@ fn existing_registration_always_supplies_its_original_value(manifest: u64, input
 
 fn missing_registration_requires_and_preserves_the_explicit_input(input: u64) {
     use policy::catalog_admission::{registration, Registration};
-    assert(registration::<u64, u64>(None, None) is Missing);
+    let missing = registration::<u64, u64>(None, None);
+    assert(missing is Missing);
     let choice = registration::<u64, u64>(None, Some(input));
     assert(choice == Registration::<u64, u64>::Initialize(input));
 }
