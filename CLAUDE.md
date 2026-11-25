@@ -2,7 +2,7 @@
 
 组件的用途、开发仓库和示例见 [Chrono Harness 用户与开发者入口](https://github.com/chrono-harness/chrono-harness-main)。
 
-Issue、分支和 PR 的分类及命名见[组织协作规范](https://github.com/chrono-harness/chrono-harness-main/blob/dev/docs/contributing.md)。
+Issue、分支和 PR 的分类及命名见[贡献约定](docs/contributing.md)。
 
 本仓维护基础 agent 指令、按规则 ID 选择的协议和 chrono-instructions 生成工具。
 
@@ -162,9 +162,9 @@ action 取 task、delegate、issue、pr、review、push、ci.wait、check、buil
 
 ## collaboration.github-contribution
 
-普通 Issue 按主要诉求选择一个主标签：缺陷用 `bug`，功能或改进用 `enhancement`，文档用 `documentation`，问题用 `question`。发布失败沿用专用 `release-failure`。分支从 `dev` 创建，选 `feature/` 或 `integration/`，后接英文小写连字符短语；有本仓 Issue 时在短语前加编号和连字符。日常 PR 以 `dev` 为目标，正式版使用 `main`。PR 标题采用 `type(scope): 结果`，正文用 `Refs #编号` 关联工作，合入默认分支即可满足全部验收时用 `Closes #编号`；仍需发布、落地 CI 或下游采用时用 `Refs`，取得证据后关闭。跨仓引用写完整仓库名和编号。
+Issue 分类、工作分支命名、PR 标题、关联与关闭时机遵循本规则的完整说明。先读取负责仓登记的目标分支、标签、检查和交付要求。宿主可按本规则 ID 独立选择；工作事件另由 collaboration.github-agent-identity 定义。
 
-[组织协作规范](https://github.com/chrono-harness/chrono-harness-main/blob/dev/docs/contributing.md)
+[GitHub 贡献约定](https://github.com/chrono-harness/chrono-harness-instructions/blob/dev/docs/contributing.md)
 
 ## candidate.landing
 

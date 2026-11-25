@@ -781,6 +781,17 @@
       }
     },
     {
+      "path": "docs/contributing.md",
+      "owner": "host",
+      "surface": "product",
+      "cost": "unmeasured",
+      "edges": [],
+      "verification": {
+        "role": "data",
+        "roots": []
+      }
+    },
+    {
       "path": "docs/licenses/methodology-attribution.md",
       "owner": "host",
       "surface": "product",
