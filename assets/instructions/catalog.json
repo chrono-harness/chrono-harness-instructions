@@ -236,14 +236,14 @@
           "locale": "zh-CN",
           "source": {
             "type": "inline",
-            "text": "先审查已有能力，再扩展。采用成熟、经过验证的软件工程方法，按 KISS、YAGNI、DRY 在现有负责位置简化、按需开发和复用。对照需求、当前 SPEC、实际使用方、已有能力和保留证据，核对职责归属、已登记依赖的影响，以及验证、CI 和存储成本。\n\n依次查本仓、固定版本的直接依赖和允许使用的外部来源，包括私有定义和仍有效的失败结论；核对接口、假设和适用范围。已有能力够用就复用。审查和测试限于实际风险与明确依赖；看不见不等于没有，考虑全局也不意味着每次都审查或测试全仓。"
+            "text": "先审查已有能力，再扩展。采用成熟、经过验证的软件工程方法，按 KISS、YAGNI、DRY 在现有负责位置简化、按需开发和复用。对照需求、当前 SPEC、实际使用方、已有能力和保留证据，核对职责归属、已登记依赖的影响，以及验证、CI 和存储成本。\n\n依次查本仓、固定版本的直接依赖和允许使用的外部来源，包括私有定义和仍有效的失败结论；核对接口、假设和适用范围。审查和测试限于实际风险与明确依赖；看不见不等于没有，考虑全局也不意味着每次都审查或测试全仓。\n\n提出新工具、脚本、定时任务或验收项之前，先问“维持现状，谁的哪项明确需求会落空？”按实际配置核对平台已有行为。说不出具体缺口就停止这项提议，已开始的重复工作也应撤回。系统已自动滚动、过期或淘汰产物时，交由系统处理，无需额外轮换缓存键、安排清理或逐项追踪删除。只有明确需求超出现有能力，或实际故障影响使用方时，才处理具体缺口。"
           }
         },
         {
           "locale": "en",
           "source": {
             "type": "inline",
-            "text": "Audit before extending. Default to established, proven software engineering practices; apply KISS, YAGNI and DRY through existing owners, sufficient simplicity, current needs and reuse. Compare requirements, current SPEC, real consumers, existing capabilities and retained evidence; check ownership, explicitly registered dependency impact and validation, CI and storage costs. Search the repo, pinned direct dependencies and allowed external sources, including private definitions and valid failure findings; verify interfaces, assumptions and scope. Reuse sufficient capability; scope audits and tests to actual risks and explicit dependencies. Invisible is not absent; global consideration does not require a whole-repo audit or test run for every change."
+            "text": "Audit before extending. Default to established, proven software engineering practices; apply KISS, YAGNI and DRY through existing owners, sufficient simplicity, current needs and reuse. Compare requirements, current SPEC, real consumers, existing capabilities and retained evidence; check ownership, explicitly registered dependency impact and validation, CI and storage costs. Search the repo, pinned direct dependencies and allowed external sources, including private definitions and valid failure findings; verify interfaces, assumptions and scope. Scope audits and tests to actual risks and explicit dependencies. Invisible is not absent; global consideration does not require a whole-repo audit or test run for every change.\n\nBefore proposing a tool, script, scheduled job or acceptance check, ask whose stated requirement would go unmet if the current system stayed as it is. Check what the platform already does under its actual configuration. Drop the proposal if you cannot identify a concrete gap, and retire duplicate work already started. Rely on built-in rotation, expiry or eviction when available. Add key rotation, cleanup jobs or per-object deletion tracking only to address a stated requirement the platform cannot meet or an observed failure affecting a user."
           }
         }
       ]
