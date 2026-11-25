@@ -19,6 +19,18 @@ fn expect_true(actual: bool)
     if !actual { panic!(); }
 }
 
+fn failing_output_takes_priority_over_every_cli_or_log_result(business: u8, error: Option<u64>) {
+    let (exit, message) = policy::finish_cli(false, error, business);
+    assert(exit == 1 && message.is_none());
+}
+
+fn written_output_preserves_the_business_exit_or_original_logging_error(business: u8, id: u64) {
+    let (ok, untouched) = policy::finish_cli::<u64>(true, None, business);
+    assert(ok == business && untouched.is_none());
+    let (failed, original) = policy::finish_cli(true, Some(id), business);
+    assert(failed == 2 && original == Some(id));
+}
+
 #[cfg_attr(not(verus_keep_ghost), test)]
 fn whole_log_events_roll_only_after_the_last_available_byte() {
     use policy::{event_fits, log_write, LogWrite};

@@ -28,20 +28,21 @@ fn main() -> ExitCode {
             .err();
         log_error = log_error.or(error);
     }
-    if io::stdout()
+    let streams_written = io::stdout()
         .lock()
         .write_all(result.stdout.as_bytes())
-        .is_err()
-        || io::stderr()
+        .is_ok()
+        && io::stderr()
             .lock()
             .write_all(result.stderr.as_bytes())
-            .is_err()
-    {
-        return ExitCode::from(1);
-    }
-    if let Some(error) = log_error {
+            .is_ok();
+    let (exit, diagnostic) = chrono_instructions::publication_decision::finish_cli(
+        streams_written,
+        log_error,
+        result.exit_code,
+    );
+    if let Some(error) = diagnostic {
         log::diagnostic("E_LOG_WRITE", &error.to_string(), Some(result.exit_code));
-        return ExitCode::from(2);
     }
-    ExitCode::from(result.exit_code)
+    ExitCode::from(exit)
 }
