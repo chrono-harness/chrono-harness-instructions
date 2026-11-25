@@ -9,6 +9,44 @@ use vstd::string::StringSliceAdditionalSpecFns;
 
 verus! {
 
+pub enum Registration<M, I> {
+    Retained(M),
+    Initialize(I),
+    Missing,
+}
+
+pub fn registration<M, I>(manifest: Option<M>, init: Option<I>) -> (source: Registration<M, I>)
+    ensures match manifest {
+        Some(saved) => source == Registration::<M, I>::Retained(saved),
+        None => match init {
+            Some(selected) => source == Registration::<M, I>::Initialize(selected),
+            None => source is Missing,
+        },
+    },
+{
+    match manifest {
+        Some(saved) => Registration::Retained(saved),
+        None => match init {
+            Some(selected) => Registration::Initialize(selected),
+            None => Registration::Missing,
+        },
+    }
+}
+
+/// An omitted init argument inherits its registered source. An explicit one binds exact bytes.
+pub fn accepts_override(selected: Option<&[u8]>, registered: Option<&[u8]>) -> (accept: bool)
+    ensures accept == match selected {
+        None => true,
+        Some(bytes) => match registered { Some(saved) => bytes@ == saved@, None => false },
+    },
+{
+    match (selected, registered) {
+        (None, _) => true,
+        (Some(bytes), Some(saved)) => super::verified_bytes::equal(bytes, saved),
+        (Some(_), None) => false,
+    }
+}
+
 pub enum OutputError { DuplicateId, DuplicatePath, EmptyRoots }
 
 pub fn output<K: Ord>(
