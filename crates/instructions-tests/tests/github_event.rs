@@ -54,14 +54,14 @@ fn ignores_markdown_examples_and_rejects_ambiguous_or_nonterminal_frames() {
         format!("{line}\n\n"),
         format!("{line} "),
         format!(" {line}"),
-        line.replace(":v3 ", ":v4 "),
+        line.replace(":v4 ", ":v5 "),
         line.replace("**Agent**", "**Аgent**"),
         line.replace("ci.wait", "ciXwait"),
         line.replace("**state**", "**State**"),
         line.replace(" · ", " | "),
         line.replace(
-            "<!-- /chrono-agent:v3 event=e1",
-            "<!-- /chrono-agent:v3 event=a1",
+            "<!-- /chrono-agent:v4 event=e1",
+            "<!-- /chrono-agent:v4 event=a1",
         ),
         line.replacen("e1000000", "f1000000", 1),
         line.split_once('\n').unwrap().1.to_string(),
@@ -134,6 +134,73 @@ fn public_v2_events_remain_readable_and_mixed_records_are_ambiguous() {
 }
 
 #[test]
+fn visible_identity_follows_each_event_across_models_and_sessions() {
+    let base = serde_json::to_value(sample()).unwrap();
+    let mut next = base.clone();
+    for (session, model, event) in [
+        (
+            "058ca5a5-1923-4ec4-8cf6-74a1694a510d",
+            "gpt-5.4",
+            "11111111-1111-4111-8111-111111111111",
+        ),
+        (
+            "058ca5a5-1923-4ec4-8cf6-74a1694a510d",
+            "claude-opus-4-6",
+            "22222222-2222-4222-8222-222222222222",
+        ),
+        (
+            "33333333-3333-4333-8333-333333333333",
+            "openrouter/Anthropic.Claude:beta",
+            "44444444-4444-4444-8444-444444444444",
+        ),
+    ] {
+        next["session"] = session.into();
+        next["model"] = model.into();
+        next["event"] = event.into();
+        let record = serde_json::from_value(next.clone()).unwrap();
+        let frame = format(&record).unwrap();
+        let lines: Vec<_> = frame.lines().collect();
+        assert_eq!(lines.len(), 3);
+        assert_eq!(
+            lines[1],
+            std::format!(
+                "**Agent** `codex/root/sub_task` · **session** `{session}` · **model** `{model}` · **action** `ci.wait` · **state** `waiting` · **target** `org/repo/run/12/attempt/2`"
+            )
+        );
+        assert_eq!(serde_json::to_value(parse(&frame).unwrap()).unwrap(), next);
+        assert_eq!(next["task"], base["task"]);
+    }
+    for model in ["", "GPT 5", "x`x", "x\ny", "x<!--y"] {
+        next["model"] = model.into();
+        let record = serde_json::from_value(next.clone()).unwrap();
+        assert!(format(&record).is_err());
+    }
+}
+
+#[test]
+fn v3_read_preserves_its_correlations_and_uses_unknown_for_the_unrecorded_model() {
+    let event = sample();
+    let old = std::format!(
+        "<!-- chrono-agent:v3 event={id} session={} parent={} task={} -->\n**Agent** `{}` · **action** `{}` · **state** `{}` · **target** `{}`\n<!-- /chrono-agent:v3 event={id} -->",
+        event.session,
+        event.parent,
+        event.task,
+        event.agent,
+        event.action,
+        event.state,
+        event.target,
+        id = event.event
+    );
+    let parsed = parse(&old).unwrap();
+    assert_eq!(serde_json::to_value(&parsed).unwrap()["model"], "unknown");
+    assert_eq!(parsed, event);
+    let new = format(&event).unwrap();
+    assert!(new.contains("**model** `unknown`"));
+    assert!(parse(&std::format!("{old}\n\n{new}")).is_err());
+    assert!(parse(&std::format!("{new}\n\n{old}")).is_err());
+}
+
+#[test]
 fn raw_event_reader_checks_every_captured_identity() {
     let sample = sample();
     let wire = format(&sample).unwrap();
@@ -146,8 +213,8 @@ fn raw_event_reader_checks_every_captured_identity() {
         }
     }
     let wrong_end = wire.replace(
-        &std::format!("<!-- /chrono-agent:v3 event={}", sample.event),
-        &std::format!("<!-- /chrono-agent:v3 event={}", sample.task),
+        &std::format!("<!-- /chrono-agent:v4 event={}", sample.event),
+        &std::format!("<!-- /chrono-agent:v4 event={}", sample.task),
     );
     assert!(
         parse(&wrong_end)

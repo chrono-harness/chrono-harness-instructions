@@ -40,7 +40,7 @@
 
 ## GitHub 工作事件
 
-每个会话用固定的公开 session，每项工作用同一个 task，每次状态变化得到新的 event。用 GitHub API 读取原始 body。下列命令输出转换失败时退出 1，成功时退出 0。
+每个会话使用固定的公开专用 session UUIDv4。同一 task 可包含多个会话和模型，同一会话可以在事件之间切换模型。每个新动作或状态变化使用新的 event。用 GitHub API 读取原始 body。下列命令输出转换失败时退出 1，成功时退出 0。
 
 ~~~sh
 chrono-instructions event-format < event.json
@@ -48,19 +48,19 @@ gh api repos/OWNER/REPO/issues/NUMBER | jq -j .body | chrono-instructions event-
 chrono-instructions event-regex
 ~~~
 
-event-format 接受 agent、session、parent、task、event、action、state、target 八个字符串。它生成以下三行，页面会显示中间的摘要。用户可以先写任意说明，空一行后附上完整记录。首尾 event 相同，session 与 task 可跨事件关联。
+event-format 接受 agent、session、model、parent、task、event、action、state、target 九个字符串。model 写运行时提供的当前模型 ID 或别名，符合 `[A-Za-z0-9][A-Za-z0-9._/@:+-]*`，如 `gpt-5.4` 或 `claude-opus-4-6`。运行时未提供型号时写 `unknown`。省略 model 也生成 `unknown`。它生成以下三行，页面会显示中间的摘要。用户可以先写任意说明，空一行后附上完整记录。首尾 event 相同，session 与 task 可跨事件关联。
 
 ~~~markdown
-<!-- chrono-agent:v3 event=e1000000-0000-4000-b000-000000000000 session=058ca5a5-1923-4ec4-8cf6-74a1694a510d parent=- task=a1000000-0000-4000-8000-000000000000 -->
-**Agent** `codex/root` · **action** `review` · **state** `succeeded` · **target** `org/repo#12`
-<!-- /chrono-agent:v3 event=e1000000-0000-4000-b000-000000000000 -->
+<!-- chrono-agent:v4 event=e1000000-0000-4000-b000-000000000000 parent=- task=a1000000-0000-4000-8000-000000000000 -->
+**Agent** `codex/root` · **session** `058ca5a5-1923-4ec4-8cf6-74a1694a510d` · **model** `unknown` · **action** `review` · **state** `succeeded` · **target** `org/repo#12`
+<!-- /chrono-agent:v4 event=e1000000-0000-4000-b000-000000000000 -->
 ~~~
 
-用 `event-read` 读取 GitHub API 的原始 body，正文可用 LF 或 CRLF，末尾可有一个换行。读取器识别 Markdown 顶层结构，核对记录唯一、完整、位于文末且 UUID 各自独立。引述、围栏和嵌套 HTML 示例中的内容按正文处理。历史 v2 仍可读取。保存事件时连同 GitHub 作者、原始对象 URL 和创建时间一起保存。
+用 `event-read` 读取 GitHub API 的原始 body，正文可用 LF 或 CRLF，末尾可有一个换行。读取器识别 Markdown 顶层结构，核对记录唯一、完整、位于文末且 UUID 各自独立。引述、围栏和嵌套 HTML 示例中的内容按正文处理。已发布的 v2、v3 记录可读取为九字段 JSON，其中 model 为 unknown。保存事件时连同 GitHub 作者、原始对象 URL 和创建时间一起保存。
 
-`event-regex` 提供Python、PCRE2 和 JavaScript 均可使用的跨行表达式，匹配完整的三行内容，捕获组 1 到 8 依次为 event、session、parent、task、agent、action、state、target。`\1` 要求末行 UUID 与首行逐字一致。各环境关闭多行、忽略大小写和 dotall 模式。比如在 Python 中可使用 `re.fullmatch(pattern.rstrip("\n"), frame, flags=re.ASCII).groups()`。应从 Markdown 中识别出顶层候选后再匹配。正文原样复制仍能通过语法校验。[可复制正则](assets/instructions/github-event-v3.regex) · [完整规则](assets/instructions/catalog.json)
+`event-regex` 提供Python、PCRE2 和 JavaScript 均可使用的跨行表达式，匹配完整的三行内容，捕获组 1 到 9 依次为 event、parent、task、agent、session、model、action、state、target。`\1` 要求末行 UUID 与首行逐字一致。各环境关闭多行、忽略大小写和 dotall 模式。比如在 Python 中可使用 `re.fullmatch(pattern.rstrip("\n"), frame, flags=re.ASCII).groups()`。应从 Markdown 中识别出顶层候选后再匹配。正文原样复制仍能通过语法校验。[可复制正则](assets/instructions/github-event-v4.regex) · [完整规则](assets/instructions/catalog.json)
 
-工作事件的 Verus 证明覆盖实际捕获字节的两个决定：v3 结束标记须重复开头的 event，session、parent、task 和 event 两两不同。历史 v2 传入四个原始 ID。登记检查同时收取生产根、独立测试根和实际读取器的反例结果。GFM 结构由 pulldown-cmark 提供，字段词法和捕获由 regex 提供，其余边界见上述协议。
+工作事件的 Verus 证明覆盖实际捕获字节的两个决定：v3、v4 的结束标记须重复开头的 event，session、parent、task 和 event 两两不同。历史 v2 传入四个原始 ID。登记检查同时收取生产根、独立测试根和实际读取器的反例结果。GFM 结构由 pulldown-cmark 提供，字段词法和捕获由 regex 提供，其余边界见上述协议。
 
 上游规则的选择由正式检查收取生产及独立预期证明。规则 ID 和上游重复行按完整字节比较，选中条目保持上游顺序。关闭或空单选可离线使用。同步前检查输出是否包含受宿主管理的界标，失败时保留原指南。JSON 解码、Unicode 去首尾空白、树集合按键查询、网络和文件事务按各自边界工作。
 
