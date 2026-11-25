@@ -26,10 +26,10 @@
             "2",
             "--output-json",
             "--compile",
-            "--emit=link=.chrono-harness/state/verify.instructions-publication.rlib,dep-info=.chrono-harness/state/verify.instructions-publication.rlib.d",
+            "--emit=link={operation_state}/verify.instructions-publication.rlib,dep-info={operation_state}/verify.instructions-publication.rlib.d",
             "crates/instructions/src/publication_decision.rs",
             "-o",
-            ".chrono-harness/state/verify.instructions-publication.rlib",
+            "{operation_state}/verify.instructions-publication.rlib",
             "-Zchecksum-hash-algorithm=sha256"
           ],
           "output_contract": {
@@ -48,10 +48,10 @@
             "2",
             "--output-json",
             "--compile",
-            "--emit=link=.chrono-harness/state/verify.instructions-event-identity.rlib,dep-info=.chrono-harness/state/verify.instructions-event-identity.rlib.d",
+            "--emit=link={operation_state}/verify.instructions-event-identity.rlib,dep-info={operation_state}/verify.instructions-event-identity.rlib.d",
             "crates/instructions/src/event_identity.rs",
             "-o",
-            ".chrono-harness/state/verify.instructions-event-identity.rlib",
+            "{operation_state}/verify.instructions-event-identity.rlib",
             "-Zchecksum-hash-algorithm=sha256"
           ],
           "output_contract": {
@@ -70,10 +70,10 @@
             "2",
             "--output-json",
             "--compile",
-            "--emit=link=.chrono-harness/state/verify.instructions-rule-selection.rlib,dep-info=.chrono-harness/state/verify.instructions-rule-selection.rlib.d",
+            "--emit=link={operation_state}/verify.instructions-rule-selection.rlib,dep-info={operation_state}/verify.instructions-rule-selection.rlib.d",
             "crates/instructions/src/rule_selection.rs",
             "-o",
-            ".chrono-harness/state/verify.instructions-rule-selection.rlib",
+            "{operation_state}/verify.instructions-rule-selection.rlib",
             "-Zchecksum-hash-algorithm=sha256"
           ],
           "output_contract": {
@@ -103,10 +103,10 @@
             "2",
             "--output-json",
             "--compile",
-            "--emit=link=.chrono-harness/state/verify.instructions-publication-tests.rlib,dep-info=.chrono-harness/state/verify.instructions-publication-tests.rlib.d",
+            "--emit=link={operation_state}/verify.instructions-publication-tests.rlib,dep-info={operation_state}/verify.instructions-publication-tests.rlib.d",
             "crates/instructions-tests/tests/publication_decision.rs",
             "-o",
-            ".chrono-harness/state/verify.instructions-publication-tests.rlib",
+            "{operation_state}/verify.instructions-publication-tests.rlib",
             "-Zchecksum-hash-algorithm=sha256"
           ],
           "output_contract": {
@@ -125,10 +125,10 @@
             "2",
             "--output-json",
             "--compile",
-            "--emit=link=.chrono-harness/state/verify.instructions-event-identity-tests.rlib,dep-info=.chrono-harness/state/verify.instructions-event-identity-tests.rlib.d",
+            "--emit=link={operation_state}/verify.instructions-event-identity-tests.rlib,dep-info={operation_state}/verify.instructions-event-identity-tests.rlib.d",
             "crates/instructions-tests/tests/event_identity.rs",
             "-o",
-            ".chrono-harness/state/verify.instructions-event-identity-tests.rlib",
+            "{operation_state}/verify.instructions-event-identity-tests.rlib",
             "-Zchecksum-hash-algorithm=sha256"
           ],
           "output_contract": {
@@ -147,10 +147,10 @@
             "2",
             "--output-json",
             "--compile",
-            "--emit=link=.chrono-harness/state/verify.instructions-rule-selection-tests.rlib,dep-info=.chrono-harness/state/verify.instructions-rule-selection-tests.rlib.d",
+            "--emit=link={operation_state}/verify.instructions-rule-selection-tests.rlib,dep-info={operation_state}/verify.instructions-rule-selection-tests.rlib.d",
             "crates/instructions-tests/tests/rule_selection.rs",
             "-o",
-            ".chrono-harness/state/verify.instructions-rule-selection-tests.rlib",
+            "{operation_state}/verify.instructions-rule-selection-tests.rlib",
             "-Zchecksum-hash-algorithm=sha256"
           ],
           "output_contract": {
