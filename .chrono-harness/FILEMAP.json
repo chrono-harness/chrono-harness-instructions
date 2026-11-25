@@ -61,6 +61,18 @@
       ]
     },
     {
+      "path": ".chrono-harness/ci/native.sh",
+      "owner": "host",
+      "surface": "product",
+      "cost": "unmeasured",
+      "edges": [
+        {
+          "kind": "test-execution",
+          "to": "test:instructions-tests"
+        }
+      ]
+    },
+    {
       "path": ".chrono-harness/ci/units.json",
       "owner": "host",
       "surface": "product",
