@@ -86,7 +86,7 @@ impl AgentEvent {
             state,
             target,
             closing,
-        ] = if frame.starts_with("<!-- chrono-agent:v3 ") {
+        ] = if crate::event_identity::uses_v3_frame(frame.as_bytes()) {
             let captures = V3_FRAME
                 .captures(frame)
                 .ok_or("unknown: malformed v3 frame")?;

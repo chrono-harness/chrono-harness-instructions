@@ -10,6 +10,8 @@ use verus_builtin_macros::verus;
 #[cfg(verus_keep_ghost)]
 use vstd::prelude::*;
 #[cfg(verus_keep_ghost)]
+use vstd::string::StringSliceAdditionalSpecFns;
+#[cfg(verus_keep_ghost)]
 use vstd::vpanic as panic;
 
 verus! {
@@ -17,6 +19,34 @@ fn expect(valid: bool)
     requires valid,
 {
     if !valid { panic!(); }
+}
+
+// State the independent cases using concatenation, arbitrary truncation and a
+// differing byte. This covers every suffix, including an empty payload.
+#[cfg(verus_keep_ghost)]
+fn legacy_marker_followed_by_any_payload(frame: &[u8], tail: &[u8])
+    requires frame@ == "<!-- chrono-agent:v3 ".spec_bytes() + tail@,
+{
+    let ghost marker = "<!-- chrono-agent:v3 ".spec_bytes();
+    assert(frame@.subrange(0, marker.len() as int) =~= marker);
+    expect(policy::uses_v3_frame(frame));
+}
+
+#[cfg(verus_keep_ghost)]
+fn truncated_marker_or_different_byte(frame: &[u8], position: usize)
+    requires ({
+        let marker = "<!-- chrono-agent:v3 ".spec_bytes();
+        frame.len() < marker.len() || (position < frame.len() && position < marker.len()
+            && frame@[position as int] != marker[position as int])
+    }),
+{
+    let ghost marker = "<!-- chrono-agent:v3 ".spec_bytes();
+    proof {
+        if frame.len() >= marker.len() {
+            assert(frame@.subrange(0,marker.len() as int)[position as int] != marker[position as int]);
+        }
+    }
+    expect(!policy::uses_v3_frame(frame));
 }
 
 #[cfg_attr(not(verus_keep_ghost), test)]

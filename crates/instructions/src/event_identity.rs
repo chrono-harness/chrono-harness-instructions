@@ -3,6 +3,8 @@
 use verus_builtin_macros::verus;
 #[cfg(verus_keep_ghost)]
 use vstd::prelude::*;
+#[cfg(verus_keep_ghost)]
+use vstd::string::StringSliceAdditionalSpecFns;
 
 #[cfg(verus_keep_ghost)]
 #[path = "verified_bytes.rs"]
@@ -11,6 +13,18 @@ mod verified_bytes;
 use crate::verified_bytes;
 
 verus! {
+
+/// Select the legacy framed grammar from the start of the original Markdown bytes.
+pub fn uses_v3_frame(frame: &[u8]) -> (legacy: bool)
+    ensures ({
+        let marker = "<!-- chrono-agent:v3 ".spec_bytes();
+        legacy == (frame.len() >= marker.len() && frame@.subrange(0, marker.len() as int) == marker)
+    }),
+{
+    let prefix = "<!-- chrono-agent:v3 ".as_bytes();
+    if frame.len() < prefix.len() { return false; }
+    verified_bytes::equal(&frame[0..prefix.len()], prefix)
+}
 
 pub enum Identity {
     Valid,
