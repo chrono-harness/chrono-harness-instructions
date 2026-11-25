@@ -13,6 +13,30 @@ use vstd::prelude::*;
 use vstd::vpanic as panic;
 
 verus! {
+
+fn existing_registration_always_supplies_its_original_value(manifest: u64, input: Option<u64>) {
+    use policy::catalog_admission::{registration, Registration};
+    let choice = registration(Some(manifest), input);
+    assert(choice == Registration::<u64, u64>::Retained(manifest));
+}
+
+fn missing_registration_requires_and_preserves_the_explicit_input(input: u64) {
+    use policy::catalog_admission::{registration, Registration};
+    let missing = registration::<u64, u64>(None, None);
+    assert(missing is Missing);
+    let choice = registration::<u64, u64>(None, Some(input));
+    assert(choice == Registration::<u64, u64>::Initialize(input));
+}
+
+fn explicit_overrides_require_an_actual_registered_byte_match(selected: &[u8], saved: &[u8]) {
+    use policy::catalog_admission::accepts_override;
+    let inherited = accepts_override(None, None);
+    let missing = accepts_override(Some(selected), None);
+    let observed = accepts_override(Some(selected), Some(saved));
+    assert(inherited && !missing);
+    assert(observed == (selected@ == saved@));
+}
+
 fn expect(value: bool)
     requires value,
 { if !value { panic!(); } }

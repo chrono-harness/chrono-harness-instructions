@@ -366,48 +366,51 @@ fn prepare(
     let mut bind = |path: &str, bytes: &[u8]| {
         observed_inputs.insert(path.into(), transaction::sha256(bytes));
     };
-    let new_manifest = manifest_before.is_none();
-    let manifest: Manifest;
-    if let Some(existing) = &manifest_before {
-        bind(MANIFEST, &existing.bytes);
-        manifest = catalog::parse(&existing.bytes)
-            .map_err(|e| error(&manifest_path, format!("invalid registration: {e}")))?;
-    } else {
-        let sources = selected.as_ref().ok_or_else(|| {
-            error(
+    use rule_selection::catalog_admission::{Registration, accepts_override, registration};
+    let (manifest, new_manifest) = match registration(manifest_before.as_ref(), selected.as_ref()) {
+        Registration::Retained(existing) => {
+            bind(MANIFEST, &existing.bytes);
+            let manifest: Manifest = catalog::parse(&existing.bytes)
+                .map_err(|e| error(&manifest_path, format!("invalid registration: {e}")))?;
+            (manifest, false)
+        }
+        Registration::Missing => {
+            return Err(error(
                 &manifest_path,
                 "missing registration; run explicit init first",
-            )
-        })?;
-        for path in [METHOD, CONTEXT, CATALOG] {
-            if regular(&root.join(path))?.is_some() {
-                return Err(error(
-                    &root.join(path),
-                    "reserved source collision without registration",
-                ));
-            }
+            ));
         }
-        let (catalog_bytes, initial) = if let Some(method) = &sources.methodology {
-            let locale = sources.locale.as_deref().unwrap_or("und");
-            pending.insert(METHOD.into(), method.clone());
-            (
-                catalog::bytes(&raw_catalog(locale)?)?,
-                raw_manifest(locale)?,
-            )
-        } else {
-            let mut initial: Manifest = catalog::parse(catalog::DEFAULT_MANIFEST.as_bytes())?;
-            if let Some(locale) = &sources.locale {
-                if initial.outputs[0].locale != *locale {
-                    initial.outputs[0].title = None;
+        Registration::Initialize(sources) => {
+            for path in [METHOD, CONTEXT, CATALOG] {
+                if regular(&root.join(path))?.is_some() {
+                    return Err(error(
+                        &root.join(path),
+                        "reserved source collision without registration",
+                    ));
                 }
-                initial.outputs[0].locale = locale.clone();
             }
-            (catalog::DEFAULT_CATALOG.as_bytes().to_vec(), initial)
-        };
-        manifest = initial;
-        pending.insert(CATALOG.into(), catalog_bytes);
-        pending.insert(CONTEXT.into(), sources.context.clone().unwrap_or_default());
-    }
+            let (catalog_bytes, initial) = if let Some(method) = &sources.methodology {
+                let locale = sources.locale.as_deref().unwrap_or("und");
+                pending.insert(METHOD.into(), method.clone());
+                (
+                    catalog::bytes(&raw_catalog(locale)?)?,
+                    raw_manifest(locale)?,
+                )
+            } else {
+                let mut initial: Manifest = catalog::parse(catalog::DEFAULT_MANIFEST.as_bytes())?;
+                if let Some(locale) = &sources.locale {
+                    if initial.outputs[0].locale != *locale {
+                        initial.outputs[0].title = None;
+                    }
+                    initial.outputs[0].locale = locale.clone();
+                }
+                (catalog::DEFAULT_CATALOG.as_bytes().to_vec(), initial)
+            };
+            pending.insert(CATALOG.into(), catalog_bytes);
+            pending.insert(CONTEXT.into(), sources.context.clone().unwrap_or_default());
+            (initial, true)
+        }
+    };
     manifest.validate().map_err(|e| error(&manifest_path, e))?;
     for path in [&manifest.catalog, &manifest.host_context] {
         relative(path, true)?;
@@ -532,11 +535,13 @@ fn prepare(
                 "init inputs differ from retained canonical sources or root binding; edit retained sources deliberately and use generate (edit the output plan for locale changes)",
             )
         };
-        if sources
-            .context
-            .is_some_and(|b| b != files[&manifest.host_context])
-            || sources.locale.is_some_and(|l| l != manifest.root().locale)
-        {
+        if !accepts_override(
+            sources.context.as_deref(),
+            Some(&files[&manifest.host_context]),
+        ) || !accepts_override(
+            sources.locale.as_deref().map(str::as_bytes),
+            Some(manifest.root().locale.as_bytes()),
+        ) {
             return Err(conflict());
         }
         if let Some(bytes) = sources.methodology {
@@ -550,7 +555,7 @@ fn prepare(
                     Content::File { path } => files.get(path),
                     _ => None,
                 });
-            if raw != Some(&bytes) {
+            if !accepts_override(Some(&bytes), raw.map(Vec::as_slice)) {
                 return Err(conflict());
             }
         }
