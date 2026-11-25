@@ -1,25 +1,34 @@
 //! Extract the final event frame from the raw GitHub Markdown using top-level block ranges.
 use pulldown_cmark::{Event, Options, Parser, Tag};
-use regex::{Captures, Regex};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{io::Read, sync::LazyLock};
 
-pub const PATTERN: &str = include_str!("../../../assets/instructions/github-event-v3.regex");
+pub const PATTERN: &str = include_str!("../../../assets/instructions/github-event-v4.regex");
+const V3_PATTERN: &str = include_str!("../../../assets/instructions/github-event-v3.regex");
 const LEGACY_PATTERN: &str = include_str!("../../../assets/instructions/github-event-v2.regex");
 const LEGACY_BEGIN: &str = "CHRONO_AGENT_BEGIN_082981f29eb429599bac65802d2f5465";
 const LEGACY_END: &str = "CHRONO_AGENT_END_94f7082e08249c1b16af162e9625946a";
 static LEGACY_LINE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(LEGACY_PATTERN.trim_end()).unwrap());
-static FRAME: LazyLock<Regex> = LazyLock::new(|| {
-    // Rust regex has no backreferences. Capture the closing spelling and compare it after matching.
-    Regex::new(&PATTERN.trim_end().replace(r"\1", "([0-9a-f-]+)")).unwrap()
-});
+fn frame_expression(pattern: &str) -> Regex {
+    // Rust regex has no backreferences. Compare the captured closing ID in identity().
+    Regex::new(&pattern.trim_end().replace(r"\1", "([0-9a-f-]+)")).unwrap()
+}
+static FRAME: LazyLock<Regex> = LazyLock::new(|| frame_expression(PATTERN));
+static V3_FRAME: LazyLock<Regex> = LazyLock::new(|| frame_expression(V3_PATTERN));
+
+fn unknown_model() -> String {
+    "unknown".into()
+}
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct AgentEvent {
     pub agent: String,
     pub session: String,
+    #[serde(default = "unknown_model")]
+    pub model: String,
     pub parent: String,
     pub task: String,
     pub event: String,
@@ -31,6 +40,7 @@ pub struct AgentEvent {
 impl AgentEvent {
     fn fields(
         [agent, session, parent, task, event, action, state, target]: [&str; 8],
+        model: &str,
         closing: Option<&str>,
     ) -> Result<Self, String> {
         use crate::event_identity::{Identity, identity};
@@ -54,6 +64,7 @@ impl AgentEvent {
         Ok(Self {
             agent: agent.into(),
             session: session.into(),
+            model: model.into(),
             parent: parent.into(),
             task: task.into(),
             event: event.into(),
@@ -63,20 +74,46 @@ impl AgentEvent {
         })
     }
 
-    fn framed(c: Captures<'_>) -> Result<Self, String> {
+    fn framed(frame: &str) -> Result<Self, String> {
         let [
             event,
-            session,
             parent,
             task,
             agent,
+            session,
+            model,
             action,
             state,
             target,
             closing,
-        ] = c.extract().1;
+        ] = if frame.starts_with("<!-- chrono-agent:v3 ") {
+            let captures = V3_FRAME
+                .captures(frame)
+                .ok_or("unknown: malformed v3 frame")?;
+            let [
+                event,
+                session,
+                parent,
+                task,
+                agent,
+                action,
+                state,
+                target,
+                closing,
+            ] = captures.extract().1;
+            [
+                event, parent, task, agent, session, "unknown", action, state, target, closing,
+            ]
+        } else {
+            FRAME
+                .captures(frame)
+                .ok_or("unknown: malformed v4 frame")?
+                .extract()
+                .1
+        };
         Self::fields(
             [agent, session, parent, task, event, action, state, target],
+            model,
             Some(closing),
         )
     }
@@ -136,11 +173,10 @@ pub fn parse(body: &str) -> Result<AgentEvent, String> {
             let c = LEGACY_LINE
                 .captures(&body[*start..])
                 .ok_or("unknown: malformed v2 event")?;
-            (*start, AgentEvent::fields(c.extract().1, None)?)
+            (*start, AgentEvent::fields(c.extract().1, "unknown", None)?)
         }
         [Marker::Opening(start), Marker::Closing(end)] => {
             let frame = &body[*start..];
-            let c = FRAME.captures(frame).ok_or("unknown: malformed v3 frame")?;
             let (opening, rest) = frame
                 .split_once('\n')
                 .ok_or("unknown: missing event summary")?;
@@ -151,7 +187,7 @@ pub fn parse(body: &str) -> Result<AgentEvent, String> {
             if last_paragraph != Some((middle, summary)) || *end != middle + summary.len() + 1 {
                 return Err("unknown: expected a top-level visible event summary".into());
             }
-            (*start, AgentEvent::framed(c)?)
+            (*start, AgentEvent::framed(frame)?)
         }
         _ => return Err("unknown: expected one final top-level event".into()),
     };
@@ -163,11 +199,12 @@ pub fn parse(body: &str) -> Result<AgentEvent, String> {
 
 pub fn format(event: &AgentEvent) -> Result<String, String> {
     let frame = format!(
-        "<!-- chrono-agent:v3 event={id} session={} parent={} task={} -->\n**Agent** `{}` · **action** `{}` · **state** `{}` · **target** `{}`\n<!-- /chrono-agent:v3 event={id} -->",
-        event.session,
+        "<!-- chrono-agent:v4 event={id} parent={} task={} -->\n**Agent** `{}` · **session** `{}` · **model** `{}` · **action** `{}` · **state** `{}` · **target** `{}`\n<!-- /chrono-agent:v4 event={id} -->",
         event.parent,
         event.task,
         event.agent,
+        event.session,
+        event.model,
         event.action,
         event.state,
         event.target,

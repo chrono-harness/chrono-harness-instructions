@@ -393,6 +393,18 @@
       ]
     },
     {
+      "path": "assets/instructions/github-event-v4.regex",
+      "owner": "host",
+      "surface": "product",
+      "cost": "unmeasured",
+      "edges": [
+        {
+          "kind": "test-execution",
+          "to": "test:instructions-tests"
+        }
+      ]
+    },
+    {
       "path": "check.sh",
       "owner": "host",
       "surface": "product",

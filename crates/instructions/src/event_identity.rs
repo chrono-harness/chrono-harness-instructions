@@ -18,7 +18,7 @@ pub enum Identity {
     ReusedId,
 }
 
-/// A v3 closing ID repeats the opening event. The four identity roles must be independent.
+/// A framed closing ID repeats the opening event. The four identity roles must be independent.
 pub fn identity(session: &[u8], parent: &[u8], task: &[u8], event: &[u8], closing: Option<&[u8]>)
     -> (verdict: Identity)
     ensures
