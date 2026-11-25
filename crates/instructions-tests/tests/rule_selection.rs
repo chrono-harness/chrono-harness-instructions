@@ -18,6 +18,30 @@ fn expect(value: bool)
 { if !value { panic!(); } }
 
 #[cfg_attr(not(verus_keep_ghost), test)]
+fn host_guide_edits_only_the_declared_standalone_lines() {
+    use policy::{GuideEdit, guide_edit};
+    // Two-character delimiters represent the positions found in the host's bytes.
+    let bytes = [120u8,10u8,60u8,98u8,13u8,10u8,113u8,10u8,60u8,101u8,13u8,10u8,121u8];
+    let edit = guide_edit(&bytes, 2, &[2], &[8], 2, 2);
+    match edit {
+        GuideEdit::Replace(start, end) => expect(start == 2 && end == 10),
+        _ => expect(false),
+    }
+    let empty = guide_edit(&[], 0, &[], &[], 2, 2);
+    expect(matches!(empty, GuideEdit::Append(false)));
+    let append = guide_edit(&[120u8], 0, &[], &[], 2, 2);
+    expect(matches!(append, GuideEdit::Append(true)));
+    let duplicate = guide_edit(&bytes, 3, &[2, 8], &[8], 2, 2);
+    expect(matches!(duplicate, GuideEdit::Malformed));
+    let reversed = guide_edit(&bytes, 2, &[8], &[2], 2, 2);
+    expect(matches!(reversed, GuideEdit::InvalidLine));
+    let inline = guide_edit(&bytes, 2, &[3], &[8], 1, 2);
+    expect(matches!(inline, GuideEdit::InvalidLine));
+    let eof = guide_edit(&[60u8,10u8,62u8], 2, &[0], &[2], 1, 1);
+    expect(matches!(eof, GuideEdit::Replace(0, 3)));
+}
+
+#[cfg_attr(not(verus_keep_ghost), test)]
 fn catalog_admission_preserves_unique_names_and_first_errors() {
     use policy::catalog_admission::*;
     use std::collections::{BTreeMap, BTreeSet};

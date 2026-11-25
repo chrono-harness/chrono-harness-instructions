@@ -149,44 +149,43 @@ fn positions(bytes: &[u8], needle: &[u8]) -> Vec<usize> {
         .collect()
 }
 
-fn line_end(bytes: &[u8], offset: usize) -> bool {
-    offset == bytes.len()
-        || bytes[offset..].starts_with(b"\n")
-        || bytes[offset..].starts_with(b"\r\n")
-}
-
 fn render(path: &Path, bytes: &[u8], block: &[u8]) -> Result<Vec<u8>, String> {
+    use rule_selection::GuideEdit;
     let reserved = positions(bytes, RESERVED);
-    if reserved.is_empty() {
-        let mut result = bytes.to_vec();
-        if !result.is_empty() && !result.ends_with(b"\n") {
+    let (starts, ends) = if reserved.is_empty() {
+        (Vec::new(), Vec::new())
+    } else {
+        (positions(bytes, BEGIN), positions(bytes, END))
+    };
+    match rule_selection::guide_edit(
+        bytes,
+        reserved.len(),
+        &starts,
+        &ends,
+        BEGIN.len(),
+        END.len(),
+    ) {
+        GuideEdit::Append(separator) => {
+            let mut result = bytes.to_vec();
+            if separator {
+                result.push(b'\n');
+            }
+            result.extend_from_slice(block);
             result.push(b'\n');
+            Ok(result)
         }
-        result.extend_from_slice(block);
-        result.push(b'\n');
-        return Ok(result);
-    }
-    let starts = positions(bytes, BEGIN);
-    let ends = positions(bytes, END);
-    if reserved.len() != 2 || starts.len() != 1 || ends.len() != 1 {
-        return Err(error(path, "malformed or duplicate managed delimiters"));
-    }
-    let (start, end) = (starts[0], ends[0]);
-    if start >= end
-        || (start > 0 && bytes[start - 1] != b'\n')
-        || (end > 0 && bytes[end - 1] != b'\n')
-        || !line_end(bytes, start + BEGIN.len())
-        || !line_end(bytes, end + END.len())
-    {
-        return Err(error(
+        GuideEdit::Replace(start, end) => {
+            let mut result = bytes[..start].to_vec();
+            result.extend_from_slice(block);
+            result.extend_from_slice(&bytes[end..]);
+            Ok(result)
+        }
+        GuideEdit::Malformed => Err(error(path, "malformed or duplicate managed delimiters")),
+        GuideEdit::InvalidLine => Err(error(
             path,
             "managed delimiters must be ordered standalone lines",
-        ));
+        )),
     }
-    let mut result = bytes[..start].to_vec();
-    result.extend_from_slice(block);
-    result.extend_from_slice(&bytes[end + END.len()..]);
-    Ok(result)
 }
 
 // Canonical lexical paths keep the registry unambiguous; existing ancestors are

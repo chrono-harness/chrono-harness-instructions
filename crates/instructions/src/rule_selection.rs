@@ -55,6 +55,61 @@ pub fn row(mode: &Mode, id: &[u8], trimmed: &[u8], selected: Option<&[u8]>, prev
     }
 }
 
+/// The replacement range includes both markers and leaves the closing line ending with the host.
+pub enum GuideEdit { Append(bool), Replace(usize, usize), Malformed, InvalidLine }
+
+pub open spec fn standalone(bytes: Seq<u8>, start: int, width: nat) -> bool {
+    let end = start + width;
+    0 <= start <= end <= bytes.len()
+        && (start == 0 || bytes[start - 1] == 10)
+        && (end == bytes.len() || bytes[end] == 10 ||
+            (end + 1 < bytes.len() && bytes[end] == 13 && bytes[end + 1] == 10))
+}
+
+fn marker_line(bytes: &[u8], start: usize, width: usize) -> (ok: bool)
+    ensures ok == standalone(bytes@, start as int, width as nat),
+{
+    if start > bytes.len() || width > bytes.len() - start { return false; }
+    let end = start + width;
+    (start == 0 || bytes[start - 1] == 10u8)
+        && (end == bytes.len() || bytes[end] == 10u8 ||
+            (bytes[end] == 13u8 && end + 1 < bytes.len() && bytes[end + 1] == 10u8))
+}
+
+/// The byte search supplies literal match offsets. This decision owns their cardinality, order,
+/// line boundaries, and the exact half-open interval used by the writer.
+pub fn guide_edit(bytes: &[u8], reserved_count: usize, starts: &[usize], ends: &[usize],
+    begin_width: usize, end_width: usize) -> (edit: GuideEdit)
+    ensures
+        match edit {
+            GuideEdit::Append(separator) => reserved_count == 0 &&
+                separator == (bytes.len() > 0 && bytes@[bytes.len()-1] != 10),
+            GuideEdit::Malformed => reserved_count != 0 &&
+                (reserved_count != 2 || starts.len() != 1 || ends.len() != 1),
+            GuideEdit::InvalidLine => reserved_count == 2 && starts.len() == 1 && ends.len() == 1 &&
+                !(starts@[0] < ends@[0] && standalone(bytes@, starts@[0] as int, begin_width as nat)
+                    && standalone(bytes@, ends@[0] as int, end_width as nat)),
+            GuideEdit::Replace(a, b) => reserved_count == 2 && starts.len() == 1 && ends.len() == 1 &&
+                starts@[0] < ends@[0] && standalone(bytes@, starts@[0] as int, begin_width as nat)
+                    && standalone(bytes@, ends@[0] as int, end_width as nat) &&
+                a == starts@[0] && b == ends@[0] + end_width && a <= b <= bytes.len(),
+        },
+{
+    if reserved_count == 0 {
+        return GuideEdit::Append(bytes.len() != 0 && bytes[bytes.len()-1] != 10u8);
+    }
+    if reserved_count != 2 || starts.len() != 1 || ends.len() != 1 {
+        return GuideEdit::Malformed;
+    }
+    let start = starts[0];
+    let end = ends[0];
+    if start >= end || !marker_line(bytes, start, begin_width) || !marker_line(bytes, end, end_width) {
+        return GuideEdit::InvalidLine;
+    }
+    assert(end as int + end_width as int <= bytes.len());
+    GuideEdit::Replace(start, end + end_width)
+}
+
 pub open spec fn prefix_at(text: Seq<u8>, marker: Seq<u8>, start: int) -> bool {
     0 <= start && start + marker.len() <= text.len() &&
     forall|k:int| 0 <= k < marker.len() ==> #[trigger] text[start + k] == marker[k]
