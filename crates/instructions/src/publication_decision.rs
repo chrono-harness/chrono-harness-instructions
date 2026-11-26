@@ -1,5 +1,8 @@
 //! Decide which exact outputs may be restored after an in-flight generation failure.
 #[cfg(verus_keep_ghost)]
+#[path = "../examples/publish_rules.rs"]
+pub(crate) mod publish_rules;
+#[cfg(verus_keep_ghost)]
 #[path = "transaction.rs"]
 pub(crate) mod transaction;
 #[cfg(not(verus_keep_ghost))]
