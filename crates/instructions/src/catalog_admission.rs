@@ -47,6 +47,47 @@ pub fn accepts_override(selected: Option<&[u8]>, registered: Option<&[u8]>) -> (
     }
 }
 
+pub enum PathRole { Control, Source, Output }
+
+/// File variants sharing a source have already been grouped by their path.
+pub fn claim_path<K: Ord>(names: &mut BTreeSet<K>, path: K, role: PathRole) -> (out: Result<(), &'static str>)
+    requires vstd::laws_cmp::obeys_cmp::<K>(),
+    ensures names@ == old(names)@.insert(path),
+        out == (if !old(names)@.contains(path) { Ok(()) } else { Err(match role {
+            PathRole::Control => "source/control/alias overlap",
+            PathRole::Source => "source/control overlap",
+            PathRole::Output => "source/output/alias overlap",
+        }) }),
+{
+    if names.insert(path) { return Ok(()); }
+    Err(match role {
+        PathRole::Control => "source/control/alias overlap",
+        PathRole::Source => "source/control overlap",
+        PathRole::Output => "source/output/alias overlap",
+    })
+}
+
+/// Folded directory prefixes may repeat with identical spelling. File identities are exclusive.
+pub fn alias_conflict<'a>(prior: Option<&'a String>, path: &String, shared_prefix: bool) -> (conflict: Option<&'a String>)
+    ensures conflict == match prior {
+        Some(old) if !shared_prefix || old@ != path@ => Some(old),
+        _ => None,
+    },
+{
+    match prior {
+        Some(old) if !shared_prefix || !String::eq(old, path) => Some(old),
+        _ => None,
+    }
+}
+
+pub fn descendant_path(parent: &[u8], other: &[u8]) -> (found: bool)
+    ensures found == (other.len() > parent.len() && other@[parent.len() as int] == 47u8
+        && other@.subrange(0,parent.len() as int) == parent@),
+{
+    other.len() > parent.len() && other[parent.len()] == 47u8 &&
+        super::verified_bytes::equal(parent, &other[0..parent.len()])
+}
+
 pub enum OutputError { DuplicateId, DuplicatePath, EmptyRoots }
 
 pub fn output<K: Ord>(
