@@ -531,7 +531,11 @@
           "kind": "test-execution",
           "to": "test:instructions-tests"
         }
-      ]
+      ],
+      "verification": {
+        "role": "data",
+        "roots": []
+      }
     },
     {
       "path": "crates/instructions-tests/tests/atomic.rs",
