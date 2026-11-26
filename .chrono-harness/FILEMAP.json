@@ -270,28 +270,6 @@
       ]
     },
     {
-      "path": ".github/workflows/dependabot-auto-merge.yml",
-      "owner": "host",
-      "surface": "product",
-      "cost": "unmeasured",
-      "edges": [],
-      "verification": {
-        "role": "data",
-        "roots": []
-      }
-    },
-    {
-      "path": ".github/dependabot.yml",
-      "owner": "host",
-      "surface": "product",
-      "cost": "unmeasured",
-      "edges": [],
-      "verification": {
-        "role": "data",
-        "roots": []
-      }
-    },
-    {
       "path": ".github/ISSUE_TEMPLATE/bug.yml",
       "owner": "host",
       "surface": "product",
@@ -347,6 +325,17 @@
       }
     },
     {
+      "path": ".github/dependabot.yml",
+      "owner": "host",
+      "surface": "product",
+      "cost": "unmeasured",
+      "edges": [],
+      "verification": {
+        "role": "data",
+        "roots": []
+      }
+    },
+    {
       "path": ".github/roadmap.cjs",
       "owner": "host",
       "surface": "product",
@@ -386,6 +375,17 @@
       }
     },
     {
+      "path": ".github/workflows/dependabot-auto-merge.yml",
+      "owner": "host",
+      "surface": "product",
+      "cost": "unmeasured",
+      "edges": [],
+      "verification": {
+        "role": "data",
+        "roots": []
+      }
+    },
+    {
       "path": ".github/workflows/issue-roadmap.yml",
       "owner": "host",
       "surface": "product",
@@ -402,7 +402,11 @@
           "kind": "test-execution",
           "to": "test:instructions-tests"
         }
-      ]
+      ],
+      "verification": {
+        "role": "data",
+        "roots": []
+      }
     },
     {
       "path": ".github/workflows/release.yml",
@@ -566,6 +570,27 @@
       }
     },
     {
+      "path": "crates/instructions-tests/examples/release_observation.rs",
+      "owner": "instructions-tests",
+      "surface": "test",
+      "cost": "unmeasured",
+      "edges": [
+        {
+          "kind": "test-execution",
+          "to": "test:instructions-tests"
+        }
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions-tests/tests/rule_selection.rs",
+            "operation": "verify.instructions-rule-selection-tests"
+          }
+        ]
+      }
+    },
+    {
       "path": "crates/instructions-tests/tests/atomic.rs",
       "owner": "instructions-tests",
       "surface": "test",
@@ -653,27 +678,6 @@
       }
     },
     {
-      "path": "crates/instructions-tests/examples/release_observation.rs",
-      "owner": "instructions-tests",
-      "surface": "test",
-      "cost": "unmeasured",
-      "edges": [
-        {
-          "kind": "test-execution",
-          "to": "test:instructions-tests"
-        }
-      ],
-      "verification": {
-        "role": "program",
-        "roots": [
-          {
-            "path": "crates/instructions-tests/tests/rule_selection.rs",
-            "operation": "verify.instructions-rule-selection-tests"
-          }
-        ]
-      }
-    },
-    {
       "path": "crates/instructions-tests/tests/rule_selection.rs",
       "owner": "instructions-tests",
       "surface": "test",
@@ -724,6 +728,31 @@
       "verification": {
         "role": "data",
         "roots": []
+      }
+    },
+    {
+      "path": "crates/instructions/examples/publish_rules.rs",
+      "owner": "instructions",
+      "surface": "product",
+      "cost": "unmeasured",
+      "edges": [
+        {
+          "kind": "test-execution",
+          "to": "test:instructions-tests"
+        }
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions/src/publication_decision.rs",
+            "operation": "verify.instructions-publication"
+          },
+          {
+            "path": "crates/instructions-tests/tests/publication_decision.rs",
+            "operation": "verify.instructions-publication-tests"
+          }
+        ]
       }
     },
     {

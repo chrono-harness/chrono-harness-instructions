@@ -22,28 +22,4 @@ jobs:
       - name: Publish the checked public rule data
         env:
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          stage="$RUNNER_TEMP/rules"
-          mkdir -p "$stage"
-          cargo run --quiet --locked --manifest-path crates/instructions/Cargo.toml --bin chrono-instructions -- publish-rules > "$stage/rules.json"
-          cp docs/licenses/* "$stage/"
-          upstream=$(git ls-remote origin refs/heads/dev)
-          if [[ "${upstream%%[[:space:]]*}" != "$SOURCE_SHA" ]]; then
-            echo "A newer development revision will publish its rules."
-            exit 0
-          fi
-          published=$(git ls-remote --heads origin refs/heads/published-rules)
-          if [[ -n "$published" ]]; then
-            git fetch --no-tags --depth=1 origin refs/heads/published-rules
-            git switch --detach FETCH_HEAD
-          else
-            git switch --orphan published-rules
-          fi
-          cp "$stage"/* .
-          git add -- rules.json methodology-attribution.md trureturing-Apache-2.0.txt
-          if ! git diff --cached --quiet; then
-            git -c user.name=github-actions -c user.email=41898282+github-actions[bot]@users.noreply.github.com commit -m "Publish rules from $GITHUB_SHA"
-            git push origin HEAD:refs/heads/published-rules
-          fi
+        run: cargo run --quiet --locked --manifest-path crates/instructions/Cargo.toml --example publish_rules
