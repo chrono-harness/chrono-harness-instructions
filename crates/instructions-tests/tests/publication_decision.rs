@@ -13,6 +13,26 @@ use vstd::prelude::*;
 use vstd::vpanic as panic;
 
 verus! {
+#[cfg(verus_keep_ghost)]
+fn changed_digest_at_any_byte_rejects(before: &[u8; 32], after: &[u8; 32], at: usize)
+    requires at < 32, before@[at as int] != after@[at as int],
+{
+    let accepted = policy::transaction::same_digest(Some(before), Some(after));
+    assert(!accepted);
+}
+
+#[cfg(verus_keep_ghost)]
+fn equal_and_absent_digests(bytes: &[u8; 32]) {
+    let identical = policy::transaction::same_digest(Some(bytes), Some(bytes));
+    assert(identical);
+    let both_absent = policy::transaction::same_digest(None, None);
+    assert(both_absent);
+    let missing_right = policy::transaction::same_digest(Some(bytes), None);
+    assert(!missing_right);
+    let missing_left = policy::transaction::same_digest(None, Some(bytes));
+    assert(!missing_left);
+}
+
 fn expect_true(actual: bool)
     requires actual,
 {
