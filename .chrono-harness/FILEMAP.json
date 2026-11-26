@@ -355,7 +355,16 @@
       "owner": "host",
       "surface": "product",
       "cost": "unmeasured",
-      "edges": []
+      "edges": [
+        {
+          "kind": "test-execution",
+          "to": "test:instructions-tests"
+        }
+      ],
+      "verification": {
+        "role": "data",
+        "roots": []
+      }
     },
     {
       "path": ".gitignore",
@@ -568,6 +577,27 @@
           {
             "path": "crates/instructions-tests/tests/publication_decision.rs",
             "operation": "verify.instructions-publication-tests"
+          }
+        ]
+      }
+    },
+    {
+      "path": "crates/instructions-tests/examples/release_observation.rs",
+      "owner": "instructions-tests",
+      "surface": "test",
+      "cost": "unmeasured",
+      "edges": [
+        {
+          "kind": "test-execution",
+          "to": "test:instructions-tests"
+        }
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions-tests/tests/rule_selection.rs",
+            "operation": "verify.instructions-rule-selection-tests"
           }
         ]
       }
