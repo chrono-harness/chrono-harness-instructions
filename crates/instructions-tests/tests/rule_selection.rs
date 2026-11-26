@@ -37,6 +37,19 @@ fn explicit_overrides_require_an_actual_registered_byte_match(selected: &[u8], s
     assert(observed == (selected@ == saved@));
 }
 
+fn missing_second_root_preserves_every_primary_byte(primary: Vec<u8>) {
+    let ghost expected = primary@;
+    let published = policy::consolidate_guides(primary, None);
+    assert(published.is_ok() && published.unwrap()@ == expected);
+}
+
+fn both_root_guides_must_agree_on_the_actual_bytes(primary: Vec<u8>, other: &[u8]) {
+    let ghost expected = primary@;
+    let published = policy::consolidate_guides(primary, Some(other));
+    assert(expected == other@ ==> published.is_ok() && published.unwrap()@ == expected);
+    assert(expected != other@ ==> published.is_err());
+}
+
 fn expect(value: bool)
     requires value,
 { if !value { panic!(); } }

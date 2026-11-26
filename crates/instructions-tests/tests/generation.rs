@@ -931,7 +931,7 @@ fn cli_runtime_logs_success_at_selected_host_and_preserves_machine_output() {
 
     let (_, version) = run_cli(&host.root, &["--version".into()]);
     assert_eq!(version.status.code(), Some(0));
-    assert_eq!(version.stdout, b"chrono-instructions 0.1.0\n");
+    assert_eq!(version.stdout, b"chrono-instructions 0.1.1\n");
     assert!(version.stderr.is_empty());
     let rows = runtime_records(&host);
     assert_eq!(rows.len(), 4);
@@ -1289,14 +1289,19 @@ fn roots_convert_only_when_prospective_whole_bytes_agree() {
         assert_eq!(host.read("CLAUDE.md"), expected);
         assert!(generate(&host.root).unwrap().is_empty());
     }
-    for registered in [false, true] {
+    for (registered, agents_text, claude_text) in [
+        (false, "agent-specific text", "claude-specific text"),
+        (true, "agent-specific text", "claude-specific text"),
+        (false, "repo-specific A", "repo-specific B"),
+        (true, "repo-specific A", "repo-specific B"),
+    ] {
         let host = Host::new();
         if registered {
             host.init().unwrap();
             fs::remove_file(host.root.join("AGENTS.md")).unwrap();
         }
-        host.write("AGENTS.md", b"agent-specific text");
-        host.write("CLAUDE.md", b"claude-specific text");
+        host.write("AGENTS.md", agents_text.as_bytes());
+        host.write("CLAUDE.md", claude_text.as_bytes());
         let before = host.snapshot();
         let failure = if registered {
             generate(&host.root)
@@ -1310,13 +1315,14 @@ fn roots_convert_only_when_prospective_whole_bytes_agree() {
         assert_eq!(cli_init(&host, None, None).exit_code, 1);
         assert_eq!(host.snapshot(), before);
         // Explicit consolidation preserves both original texts; retry can finish.
-        host.write("CLAUDE.md", b"agent-specific text\nclaude-specific text");
+        let consolidated = format!("{agents_text}\n{claude_text}");
+        host.write("CLAUDE.md", consolidated.as_bytes());
         fs::remove_file(host.root.join("AGENTS.md")).unwrap();
         assert_eq!(cli_init(&host, None, None).exit_code, 0);
         assert_alias(&host);
         assert!(
             host.read("CLAUDE.md")
-                .starts_with(b"agent-specific text\nclaude-specific text\n")
+                .starts_with(format!("{consolidated}\n").as_bytes())
         );
     }
 }

@@ -58,6 +58,20 @@ pub fn row(mode: &Mode, id: &[u8], trimmed: &[u8], selected: Option<&[u8]>, prev
 /// The replacement range includes both markers and leaves the closing line ending with the host.
 pub enum GuideEdit { Append(bool), Replace(usize, usize), Malformed, InvalidLine }
 
+/// Publish the primary guide's exact bytes only when the second rendered root agrees.
+pub fn consolidate_guides(primary: Vec<u8>, other: Option<&[u8]>) -> (result: Result<Vec<u8>, ()>)
+    ensures
+        result.is_ok() == match other { None => true, Some(candidate) => candidate@ == primary@ },
+        result.is_ok() ==> result.unwrap()@ == primary@,
+{
+    if let Some(candidate) = other {
+        if !verified_bytes::equal(primary.as_slice(), candidate) {
+            return Err(());
+        }
+    }
+    Ok(primary)
+}
+
 pub open spec fn standalone(bytes: Seq<u8>, start: int, width: nat) -> bool {
     let end = start + width;
     0 <= start <= end <= bytes.len()
