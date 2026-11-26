@@ -635,17 +635,17 @@ fn root_guides(root: &Path, block: &[u8], changes: &mut Vec<Change>) -> Result<b
         &claude
     };
     let after = render(donor_path, donor.map_or(&[], |s| s.bytes.as_slice()), block)?;
-    if claude_before.is_some() {
-        if let Some(before) = &agents_before {
-            if render(&agents, &before.bytes, block)? != after {
-                return Err(format!(
-                    "{} and {}: conflicting host-owned content; deliberately consolidate preserved text in CLAUDE.md, then align AGENTS.md or remove the redundant regular AGENTS.md before retrying",
-                    agents.display(),
-                    claude.display()
-                ));
-            }
-        }
-    }
+    let other = match (&claude_before, &agents_before) {
+        (Some(_), Some(before)) => Some(render(&agents, &before.bytes, block)?),
+        _ => None,
+    };
+    let after = rule_selection::consolidate_guides(after, other.as_deref()).map_err(|()| {
+        format!(
+            "{} and {}: conflicting host-owned content; deliberately consolidate preserved text in CLAUDE.md, then align AGENTS.md or remove the redundant regular AGENTS.md before retrying",
+            agents.display(),
+            claude.display()
+        )
+    })?;
     let permissions = donor.map(|s| s.permissions.clone());
     let mut guide = Change::new(claude, claude_before, after);
     guide.permissions = permissions;
