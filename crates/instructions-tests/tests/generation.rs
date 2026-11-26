@@ -1,8 +1,8 @@
 #![allow(unexpected_cfgs)]
-#[cfg(verus_keep_ghost)]
-use vstd::prelude::*;
 #[cfg(not(verus_keep_ghost))]
 use verus_builtin_macros::verus;
+#[cfg(verus_keep_ghost)]
+use vstd::prelude::*;
 
 verus! {
 pub fn release_version_line() -> (value: &'static str)
