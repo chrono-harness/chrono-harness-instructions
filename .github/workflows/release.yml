@@ -57,8 +57,9 @@ jobs:
           echo '{"mode":"off"}' > "$host/.chrono-harness/rules.json"
           echo 'Local setup.' > "$host/CLAUDE.md"
           "$binary" sync-rules --host-root "$host"
-          test "$(readlink "$host/AGENTS.md")" = CLAUDE.md
-          grep -Fx 'Local setup.' "$host/AGENTS.md"
+          target=$(readlink "$host/AGENTS.md")
+          cargo run --quiet --locked --release --manifest-path crates/instructions-tests/Cargo.toml \
+            --example release_observation -- "$target" "$host/AGENTS.md"
           mkdir "$RUNNER_TEMP/dist"
           cp "$CARGO_TARGET_DIR/release/chrono-instructions" "$RUNNER_TEMP/dist/chrono-instructions-$PLATFORM"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
