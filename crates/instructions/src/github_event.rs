@@ -16,7 +16,7 @@ pub fn separated(prefix: &[u8]) -> (valid: bool)
         && prefix@[prefix.len() - 2] == 10 && prefix@[prefix.len() - 1] == 10)),
 {
     prefix.is_empty() || (prefix.len() >= 2
-        && prefix[prefix.len() - 2] == b'\n' && prefix[prefix.len() - 1] == b'\n')
+        && prefix[prefix.len() - 2] == 10u8 && prefix[prefix.len() - 1] == 10u8)
 }
 
 /// The final paragraph must have the expected starting byte and the complete visible text.
