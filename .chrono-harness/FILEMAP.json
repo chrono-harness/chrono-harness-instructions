@@ -906,7 +906,20 @@
           "kind": "test-execution",
           "to": "test:instructions-tests"
         }
-      ]
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions/src/publication_decision.rs",
+            "operation": "verify.instructions-publication"
+          },
+          {
+            "path": "crates/instructions-tests/tests/publication_decision.rs",
+            "operation": "verify.instructions-publication-tests"
+          }
+        ]
+      }
     },
     {
       "path": "crates/instructions/src/verified_bytes.rs",
@@ -937,6 +950,14 @@
           {
             "path": "crates/instructions-tests/tests/rule_selection.rs",
             "operation": "verify.instructions-rule-selection-tests"
+          },
+          {
+            "path": "crates/instructions/src/publication_decision.rs",
+            "operation": "verify.instructions-publication"
+          },
+          {
+            "path": "crates/instructions-tests/tests/publication_decision.rs",
+            "operation": "verify.instructions-publication-tests"
           }
         ]
       }

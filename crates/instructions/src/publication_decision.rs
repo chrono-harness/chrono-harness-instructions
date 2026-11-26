@@ -1,4 +1,7 @@
 //! Decide which exact outputs may be restored after an in-flight generation failure.
+#[cfg(verus_keep_ghost)]
+#[path = "transaction.rs"]
+pub(crate) mod transaction;
 #[cfg(not(verus_keep_ghost))]
 use verus_builtin_macros::verus;
 #[cfg(verus_keep_ghost)]

@@ -1,12 +1,43 @@
+//! Digest comparison is shared by input admission and publication recovery.
+#[cfg(not(verus_keep_ghost))]
+use crate::verified_bytes;
+#[cfg(verus_keep_ghost)]
+#[path = "verified_bytes.rs"]
+mod verified_bytes;
+#[cfg(not(verus_keep_ghost))]
+use verus_builtin_macros::verus;
+#[cfg(verus_keep_ghost)]
+use vstd::prelude::*;
+
+verus! {
+pub(crate) fn same_digest(left: Option<&[u8; 32]>, right: Option<&[u8; 32]>) -> (same: bool)
+    ensures same == match (left, right) {
+        (Some(a), Some(b)) => a@ == b@,
+        (None, None) => true,
+        _ => false,
+    },
+{
+    match (left, right) {
+        (Some(a), Some(b)) => verified_bytes::equal(a.as_slice(), b.as_slice()),
+        (None, None) => true,
+        _ => false,
+    }
+}
+}
+
+#[cfg(not(verus_keep_ghost))]
 use std::fs::{self, Permissions};
+#[cfg(not(verus_keep_ghost))]
 use std::path::{Path, PathBuf};
 
+#[cfg(not(verus_keep_ghost))]
 pub(super) struct Snapshot {
     pub bytes: Vec<u8>,
     pub permissions: Permissions,
     pub identity: String,
 }
 
+#[cfg(not(verus_keep_ghost))]
 pub(super) struct Change {
     pub path: PathBuf,
     pub before: Option<Snapshot>,
@@ -14,11 +45,13 @@ pub(super) struct Change {
     pub permissions: Option<Permissions>,
 }
 
+#[cfg(not(verus_keep_ghost))]
 pub(super) enum After {
     Regular(Vec<u8>),
     RelativeAlias,
 }
 
+#[cfg(not(verus_keep_ghost))]
 impl Change {
     pub fn new(path: PathBuf, before: Option<Snapshot>, after: Vec<u8>) -> Self {
         let permissions = before.as_ref().map(|s| s.permissions.clone());
@@ -44,20 +77,28 @@ impl Change {
     }
 }
 
+#[cfg(not(verus_keep_ghost))]
 use crate::publication_decision::{Repair, repair};
+#[cfg(not(verus_keep_ghost))]
 use rustix::fs::{CWD, RenameFlags, renameat_with};
+#[cfg(not(verus_keep_ghost))]
 use sha2::{Digest, Sha256};
+#[cfg(not(verus_keep_ghost))]
 use std::collections::BTreeMap;
+#[cfg(not(verus_keep_ghost))]
 use std::io::Write;
+#[cfg(not(verus_keep_ghost))]
 use std::os::unix::{
     ffi::{OsStrExt, OsStringExt},
     fs::{MetadataExt, OpenOptionsExt, PermissionsExt, symlink},
 };
 
-pub(super) fn sha256(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+#[cfg(not(verus_keep_ghost))]
+pub(super) fn sha256(bytes: &[u8]) -> [u8; 32] {
+    Sha256::digest(bytes).into()
 }
 
+#[cfg(not(verus_keep_ghost))]
 pub(super) fn identity(path: &Path) -> Result<String, String> {
     let meta = fs::symlink_metadata(path).map_err(|err| super::error(path, err))?;
     Ok(format!(
@@ -68,11 +109,13 @@ pub(super) fn identity(path: &Path) -> Result<String, String> {
     ))
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn publish_entry(source: &Path, target: &Path) -> Result<(), String> {
     renameat_with(CWD, source, CWD, target, RenameFlags::NOREPLACE)
         .map_err(|err| super::error(target, err))
 }
 
+#[cfg(not(verus_keep_ghost))]
 #[derive(Default)]
 pub(super) struct Fault {
     pub after: Option<usize>,
@@ -81,6 +124,7 @@ pub(super) struct Fault {
     pub fail: Option<String>,
 }
 
+#[cfg(not(verus_keep_ghost))]
 impl Fault {
     fn at(&self, point: &str) -> Result<(), String> {
         if let Some(hook) = self.checkpoint {
@@ -93,6 +137,7 @@ impl Fault {
     }
 }
 
+#[cfg(not(verus_keep_ghost))]
 struct Plan {
     host: String,
     directories: Vec<Entry>,
@@ -101,6 +146,7 @@ struct Plan {
     bindings: Bindings,
 }
 
+#[cfg(not(verus_keep_ghost))]
 #[derive(Default)]
 pub(super) struct Bindings {
     inputs: BTreeMap<String, Object>,
@@ -108,20 +154,23 @@ pub(super) struct Bindings {
     pub external: Vec<ExternalInput>,
 }
 
+#[cfg(not(verus_keep_ghost))]
 impl Bindings {
     pub(super) fn require_absent(&mut self, path: &str) {
         self.unchanged.insert(path.to_owned(), None);
     }
 }
 
+#[cfg(not(verus_keep_ghost))]
 pub(super) struct ExternalInput {
     requested: Vec<u8>,
     resolved: Vec<u8>,
     identity: String,
-    sha256: String,
+    sha256: [u8; 32],
     mode: u32,
 }
 
+#[cfg(not(verus_keep_ghost))]
 pub(super) fn external_input(path: &Path) -> Result<(Vec<u8>, ExternalInput), String> {
     let requested = if path.is_absolute() {
         path.to_path_buf()
@@ -152,9 +201,10 @@ pub(super) fn external_input(path: &Path) -> Result<(Vec<u8>, ExternalInput), St
     Ok((bytes, binding))
 }
 
+#[cfg(not(verus_keep_ghost))]
 pub(super) fn bind_inputs(
     root: &Path,
-    inputs: BTreeMap<String, String>,
+    inputs: BTreeMap<String, [u8; 32]>,
     unchanged: Vec<&Change>,
     alias: bool,
 ) -> Result<Bindings, String> {
@@ -163,7 +213,7 @@ pub(super) fn bind_inputs(
         let path = target(root, &name)?;
         let object =
             observe(&path)?.ok_or_else(|| super::error(&path, "registered input disappeared"))?;
-        if object.bytes.as_ref() != Some(&digest) {
+        if !same_digest(object.bytes.as_ref(), Some(&digest)) {
             return Err(super::error(
                 &path,
                 "registered input changed during preparation",
@@ -193,7 +243,7 @@ pub(super) fn bind_inputs(
         if !fs::symlink_metadata(&path)
             .map_err(|e| e.to_string())?
             .is_symlink()
-            || expected.bytes.as_ref() != Some(&sha256(b"CLAUDE.md"))
+            || !same_digest(expected.bytes.as_ref(), Some(&sha256(b"CLAUDE.md")))
         {
             return Err(super::error(
                 &path,
@@ -205,6 +255,7 @@ pub(super) fn bind_inputs(
     Ok(bound)
 }
 
+#[cfg(not(verus_keep_ghost))]
 struct Entry {
     target: String,
     before: Option<Object>,
@@ -212,17 +263,29 @@ struct Entry {
     backup: Option<Object>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg(not(verus_keep_ghost))]
+#[derive(Clone, Debug, Eq)]
 struct Object {
     identity: String,
-    bytes: Option<String>,
+    bytes: Option<[u8; 32]>,
     mode: u32,
 }
 
+#[cfg(not(verus_keep_ghost))]
+impl PartialEq for Object {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity == other.identity
+            && self.mode == other.mode
+            && same_digest(self.bytes.as_ref(), other.bytes.as_ref())
+    }
+}
+
+#[cfg(not(verus_keep_ghost))]
 fn mode(meta: &fs::Metadata) -> u32 {
     meta.mode() & 0o777
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn stamp(meta: &fs::Metadata) -> (u64, i64, i64, i64, i64, u32, u64) {
     (
         meta.len(),
@@ -235,6 +298,7 @@ fn stamp(meta: &fs::Metadata) -> (u64, i64, i64, i64, i64, u32, u64) {
     )
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn observe(path: &Path) -> Result<Option<Object>, String> {
     let Some(meta) = super::metadata(path)? else {
         return Ok(None);
@@ -273,12 +337,14 @@ fn observe(path: &Path) -> Result<Option<Object>, String> {
     }))
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn sync(path: &Path) -> Result<(), String> {
     fs::File::open(path)
         .and_then(|f| f.sync_all())
         .map_err(|e| super::error(path, e))
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn write(path: &Path, bytes: &[u8], mode: u32) -> Result<(), String> {
     let mut f = fs::OpenOptions::new()
         .write(true)
@@ -292,6 +358,7 @@ fn write(path: &Path, bytes: &[u8], mode: u32) -> Result<(), String> {
         .map_err(|e| super::error(path, e))
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn relative(root: &Path, path: &Path) -> Result<String, String> {
     let name = path
         .strip_prefix(root)
@@ -302,6 +369,7 @@ fn relative(root: &Path, path: &Path) -> Result<String, String> {
     Ok(name.into())
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn target(root: &Path, name: &str) -> Result<PathBuf, String> {
     super::relative(name, false)?;
     let path = root.join(name);
@@ -309,6 +377,7 @@ fn target(root: &Path, name: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn build_plan(
     root: &Path,
     directory: &Path,
@@ -407,6 +476,7 @@ fn build_plan(
     })
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn check_parents(root: &Path, plan: &Plan, path: &Path) -> Result<(), String> {
     if identity(root)? != plan.host {
         return Err("publication host identity changed; preserve state".into());
@@ -440,6 +510,7 @@ fn check_parents(root: &Path, plan: &Plan, path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn check_bindings(root: &Path, bindings: &Bindings) -> Result<(), String> {
     for (name, expected) in &bindings.inputs {
         let path = target(root, name)?;
@@ -464,7 +535,7 @@ fn check_bindings(root: &Path, bindings: &Bindings) -> Result<(), String> {
         let (_, observed) = external_input(&requested)?;
         if observed.resolved != external.resolved
             || observed.identity != external.identity
-            || observed.sha256 != external.sha256
+            || !same_digest(Some(&observed.sha256), Some(&external.sha256))
             || observed.mode != external.mode
         {
             return Err(super::error(
@@ -476,6 +547,7 @@ fn check_bindings(root: &Path, bindings: &Bindings) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn install(root: &Path, plan: &Plan, directory: &Path, fault: &Fault) -> Result<(), String> {
     check_bindings(root, &plan.bindings)?;
     for (entries, prefix) in [(&plan.directories, "dir"), (&plan.files, "next")] {
@@ -509,6 +581,7 @@ fn install(root: &Path, plan: &Plan, directory: &Path, fault: &Fault) -> Result<
     Ok(())
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn settle_effects(
     root: &Path,
     directory: &Path,
@@ -587,14 +660,17 @@ fn settle_effects(
 
 // The advisory lock belongs to the host directory. Explicit unlock also
 // releases inherited copies of the same open file description.
+#[cfg(not(verus_keep_ghost))]
 struct HostLock(fs::File);
 
+#[cfg(not(verus_keep_ghost))]
 impl Drop for HostLock {
     fn drop(&mut self) {
         let _ = self.0.unlock();
     }
 }
 
+#[cfg(not(verus_keep_ghost))]
 pub(super) fn run(
     host: &Path,
     fault: Fault,
