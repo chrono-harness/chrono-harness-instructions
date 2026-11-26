@@ -256,3 +256,31 @@ fn delimiter_at_any_offset_prevents_publication() {
 #[cfg(verus_keep_ghost)]
 #[path = "generation.rs"]
 mod generation;
+
+#[cfg(all(test, not(verus_keep_ghost)))]
+#[test]
+fn original_catalog_orders_and_rejections_reach_the_publisher() {
+    use chrono_instructions::test_support::rule_order;
+    use serde_json::json;
+    let catalog = json!({
+        "schema_version":1, "locales":[],
+        "atoms":[
+            {"id":"end","requires":["shared"],"variants":[]},
+            {"id":"shared","requires":[],"variants":[]},
+            {"id":"start","requires":["shared"],"variants":[]}
+        ],
+        "layouts":[{"id":"chosen","sections":[
+            {"depth":1,"titles":[],"atoms":["end","start"]},
+            {"depth":2,"titles":[],"atoms":[]},
+            {"depth":1,"titles":[],"atoms":["shared"]}
+        ]}]
+    });
+    let catalog = serde_json::to_vec(&catalog).unwrap();
+    let mut output = json!({"id":"root","path":"CLAUDE.md","format":"root-guide","locale":"en","roots":["start","end"]});
+    let ordered = |o: &serde_json::Value| rule_order(&catalog, &serde_json::to_vec(o).unwrap());
+    assert_eq!(ordered(&output).unwrap(), ["shared", "start", "end"]);
+    output["layout"] = json!("chosen");
+    assert_eq!(ordered(&output).unwrap(), ["end", "start", "shared"]);
+    output["layout"] = json!("absent");
+    assert_eq!(ordered(&output).unwrap_err(), "unknown layout absent");
+}
