@@ -678,7 +678,20 @@
           "kind": "test-execution",
           "to": "test:instructions-tests"
         }
-      ]
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions/src/rule_selection.rs",
+            "operation": "verify.instructions-rule-selection"
+          },
+          {
+            "path": "crates/instructions-tests/tests/rule_selection.rs",
+            "operation": "verify.instructions-rule-selection-tests"
+          }
+        ]
+      }
     },
     {
       "path": "crates/instructions/src/catalog_admission.rs",

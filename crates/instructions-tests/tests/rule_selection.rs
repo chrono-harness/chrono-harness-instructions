@@ -10,12 +10,59 @@ use verus_builtin_macros::verus;
 #[cfg(verus_keep_ghost)]
 use vstd::prelude::*;
 #[cfg(verus_keep_ghost)]
+use vstd::utf8::encode_utf8;
+#[cfg(verus_keep_ghost)]
 use vstd::vpanic as panic;
 
 #[path = "../examples/release_observation.rs"]
 mod release_observation;
 
 verus! {
+
+#[cfg(verus_keep_ghost)]
+fn publication_keeps_section_boundaries<'a>(first: &'a [String], second: &'a [String]) {
+    let mut ids = Vec::new();
+    policy::catalog::append_section(&mut ids, first);
+    policy::catalog::append_section(&mut ids, second);
+    assert(ids@.len() == first@.len() + second@.len());
+    assert forall|i:int| 0 <= i < first@.len() implies ids@[i]@ == first@[i]@ by {}
+    assert forall|i:int| 0 <= i < second@.len() implies ids@[first@.len()+i]@ == second@[i]@ by {}
+}
+
+#[cfg(verus_keep_ghost)]
+fn publication_uses_selected_order_or_the_matching_layout<'a>(atoms: &[&'a policy::catalog::Atom], layouts: &[policy::catalog::Layout], id: &String) {
+    let ids = policy::catalog::selected_ids(atoms);
+    assert(ids@.len() == atoms@.len());
+    assert forall|i:int| 0 <= i < ids@.len() implies ids@[i]@ == atoms@[i].id@ by {}
+    let absent = policy::catalog::layout_for(None, layouts);
+    assert(absent == Ok::<Option<usize>, &String>(None));
+    let explicit = policy::catalog::layout_for(Some(id), layouts);
+    match explicit {
+        Ok(Some(found)) => { assert(encode_utf8(layouts@[found as int].id@) == encode_utf8(id@)); },
+        Ok(None) => { assert(false); },
+        Err(missing) => {
+            assert(missing == id);
+            assert forall|j:int| 0 <= j < layouts@.len() implies encode_utf8(layouts@[j].id@) != encode_utf8(id@) by {}
+        },
+    }
+}
+
+#[cfg(verus_keep_ghost)]
+fn publication_of_all_sections_preserves_first_and_last(sections: &[policy::catalog::Section]) {
+    let ids = policy::catalog::layout_ids(sections);
+    proof {
+        let ordered = ids@.map(|_index, id: &str| id@);
+        if sections.len() == 0 {
+            assert(ordered.len() == 0);
+        } else {
+            let prefix = policy::catalog::section_order(sections@.drop_last());
+            let last = sections@.last().atoms@;
+            assert(ordered.len() == prefix.len() + last.len());
+            assert forall|i:int| 0 <= i < prefix.len() implies ordered[i] == prefix[i] by {}
+            assert forall|i:int| 0 <= i < last.len() implies ordered[prefix.len()+i] == last[i]@ by {}
+        }
+    }
+}
 
 #[cfg_attr(not(verus_keep_ghost), test)]
 fn release_accepts_the_expected_observations_only() {

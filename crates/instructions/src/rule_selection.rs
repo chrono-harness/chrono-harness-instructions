@@ -9,6 +9,10 @@ use verus_builtin_macros::verus;
 #[cfg(verus_keep_ghost)]
 use vstd::prelude::*;
 
+#[cfg(verus_keep_ghost)]
+#[path = "catalog.rs"]
+pub mod catalog;
+
 #[path = "catalog_admission.rs"]
 pub mod catalog_admission;
 

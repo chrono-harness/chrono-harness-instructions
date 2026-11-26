@@ -1,13 +1,126 @@
+#[cfg(not(verus_keep_ghost))]
+use verus_builtin_macros::verus;
+#[cfg(verus_keep_ghost)]
+use vstd::prelude::*;
+#[cfg(verus_keep_ghost)]
+use vstd::utf8::encode_utf8;
+
+verus! {
+/// Resolve a requested layout before considering dependency order.
+pub(crate) fn layout_for<'a>(id: Option<&'a String>, layouts: &[Layout])
+    -> (choice: Result<Option<usize>, &'a String>)
+    ensures match choice {
+        Ok(None) => id is None,
+        Ok(Some(i)) => id is Some && i < layouts@.len()
+            && encode_utf8(layouts@[i as int].id@) == encode_utf8(id.unwrap()@)
+            && forall|j:int| 0 <= j < i ==> encode_utf8(layouts@[j].id@) != encode_utf8(id.unwrap()@),
+        Err(missing) => id == Some(missing) && forall|j:int| 0 <= j < layouts@.len() ==>
+            encode_utf8(layouts@[j].id@) != encode_utf8(missing@),
+    },
+{
+    let Some(requested) = id else { return Ok(None); };
+    let mut i = 0;
+    while i < layouts.len()
+        invariant id == Some(requested), i <= layouts@.len(),
+            forall|j:int| 0 <= j < i ==> encode_utf8(layouts@[j].id@) != encode_utf8(requested@),
+        decreases layouts.len() - i,
+    {
+        if super::verified_bytes::equal(layouts[i].id.as_str().as_bytes(), requested.as_str().as_bytes()) {
+            return Ok(Some(i));
+        }
+        i += 1;
+    }
+    Err(requested)
+}
+
+/// Without a layout the dependency traversal already supplies the publication order.
+pub(crate) fn selected_ids<'a>(atoms: &[&'a Atom]) -> (ids: Vec<&'a str>)
+    ensures ids@.len() == atoms@.len(),
+        forall|i:int| 0 <= i < atoms@.len() ==> ids@[i]@ == atoms@[i].id@,
+{
+    let mut ids: Vec<&str> = Vec::new();
+    let mut i = 0;
+    while i < atoms.len()
+        invariant i <= atoms@.len(), ids@.len() == i,
+            forall|j:int| 0 <= j < i ==> ids@[j]@ == atoms@[j].id@,
+        decreases atoms.len() - i,
+    {
+        ids.push(atoms[i].id.as_str());
+        i += 1;
+    }
+    ids
+}
+
+pub(crate) open spec fn section_order(sections: Seq<Section>) -> Seq<Seq<char>>
+    decreases sections.len(),
+{
+    if sections.len() == 0 { Seq::empty() }
+    else { section_order(sections.drop_last()) + sections.last().atoms@.map(|_index, id: String| id@) }
+}
+
+/// Append the actual sections in declaration order, including empty sections.
+pub(crate) fn layout_ids(sections: &[Section]) -> (ids: Vec<&str>)
+    ensures ids@.map(|_index, id: &str| id@) == section_order(sections@),
+{
+    let mut ids: Vec<&str> = Vec::new();
+    let mut i = 0;
+    while i < sections.len()
+        invariant i <= sections@.len(),
+            ids@.map(|_index, id: &str| id@) == section_order(sections@.take(i as int)),
+        decreases sections.len() - i,
+    {
+        let ghost previous = ids@;
+        append_section(&mut ids, &sections[i].atoms);
+        proof {
+            let prefix = sections@.take(i + 1);
+            assert(prefix.drop_last() =~= sections@.take(i as int));
+            assert(prefix.last() == sections@[i as int]);
+            assert(ids@.map(|_index, id: &str| id@) =~=
+                previous.map(|_index, id: &str| id@) + sections@[i as int].atoms@.map(|_index, id: String| id@));
+        }
+        i += 1;
+    }
+    assert(sections@.take(i as int) =~= sections@);
+    ids
+}
+
+/// A section starts after the entire preceding prefix and retains each declared ID in order.
+pub(crate) fn append_section<'a>(order: &mut Vec<&'a str>, atoms: &'a [String])
+    ensures order@.len() == old(order)@.len() + atoms@.len(),
+        forall|i: int| 0 <= i < old(order)@.len() ==> order@[i] == old(order)@[i],
+        forall|i: int| 0 <= i < atoms@.len() ==> order@[old(order)@.len() + i]@ == atoms@[i]@,
+{
+    let mut i = 0;
+    while i < atoms.len()
+        invariant i <= atoms@.len(), order@.len() == old(order)@.len() + i,
+            forall|j: int| 0 <= j < old(order)@.len() ==> order@[j] == old(order)@[j],
+            forall|j: int| 0 <= j < i ==> order@[old(order)@.len() + j]@ == atoms@[j]@,
+        decreases atoms.len() - i,
+    {
+        order.push(atoms[i].as_str());
+        i += 1;
+    }
+}
+}
+
+#[cfg(not(verus_keep_ghost))]
 use crate::rule_selection::catalog_admission::{self, LocaleError, OutputError, VariantError};
+#[cfg(not(verus_keep_ghost))]
 use serde::{Deserialize, Serialize};
+#[cfg(not(verus_keep_ghost))]
 use std::collections::{BTreeMap, BTreeSet};
+#[cfg(not(verus_keep_ghost))]
 use std::path::Path;
 
+#[cfg(not(verus_keep_ghost))]
 pub(super) const DEFAULT_CATALOG: &str = include_str!("../../../assets/instructions/catalog.json");
+#[cfg(not(verus_keep_ghost))]
 pub(super) const DEFAULT_MANIFEST: &str =
     include_str!("../../../assets/instructions/default-manifest.json");
+#[cfg(not(verus_keep_ghost))]
 pub(super) const RENDER: &str = "atomic-rules/relative-alias/v3";
 
+#[cfg(not(verus_keep_ghost))]
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Manifest {
@@ -19,6 +132,7 @@ pub(super) struct Manifest {
     pub outputs: Vec<Output>,
 }
 
+#[cfg(not(verus_keep_ghost))]
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Output {
@@ -35,6 +149,7 @@ pub(super) struct Output {
     pub skill: Option<Skill>,
 }
 
+#[cfg(not(verus_keep_ghost))]
 #[derive(Clone, Copy, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(super) enum Format {
@@ -42,6 +157,7 @@ pub(super) enum Format {
     Markdown,
     Skill,
 }
+#[cfg(not(verus_keep_ghost))]
 impl Format {
     fn label(self) -> &'static str {
         match self {
@@ -52,6 +168,7 @@ impl Format {
     }
 }
 
+#[cfg(not(verus_keep_ghost))]
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Skill {
@@ -59,6 +176,7 @@ pub(super) struct Skill {
     pub description: String,
 }
 
+#[cfg(not(verus_keep_ghost))]
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Catalog {
@@ -68,25 +186,28 @@ pub(super) struct Catalog {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layouts: Vec<Layout>,
 }
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Layout {
+#[cfg_attr(not(verus_keep_ghost), derive(Deserialize, Serialize))]
+#[cfg_attr(not(verus_keep_ghost), serde(deny_unknown_fields))]
+pub(crate) struct Layout {
     pub id: String,
     pub sections: Vec<Section>,
 }
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Section {
+#[cfg_attr(not(verus_keep_ghost), derive(Deserialize, Serialize))]
+#[cfg_attr(not(verus_keep_ghost), serde(deny_unknown_fields))]
+pub(crate) struct Section {
     pub depth: u8,
+    #[cfg(not(verus_keep_ghost))]
     pub titles: Vec<Title>,
     pub atoms: Vec<String>,
 }
+#[cfg(not(verus_keep_ghost))]
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Title {
     pub locale: String,
     pub text: String,
 }
+#[cfg(not(verus_keep_ghost))]
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Locale {
@@ -94,19 +215,22 @@ pub(super) struct Locale {
     pub root_frame: String,
     pub projection_notice: String,
 }
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Atom {
+#[cfg_attr(not(verus_keep_ghost), derive(Deserialize, Serialize))]
+#[cfg_attr(not(verus_keep_ghost), serde(deny_unknown_fields))]
+pub(crate) struct Atom {
     pub id: String,
     pub requires: Vec<String>,
+    #[cfg(not(verus_keep_ghost))]
     pub variants: Vec<Variant>,
 }
+#[cfg(not(verus_keep_ghost))]
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Variant {
     pub locale: String,
     pub source: Content,
 }
+#[cfg(not(verus_keep_ghost))]
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
 pub(super) enum Content {
@@ -114,14 +238,17 @@ pub(super) enum Content {
     File { path: String },
 }
 
+#[cfg(not(verus_keep_ghost))]
 pub(super) fn parse<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
     serde_json::from_slice(bytes).map_err(|e| e.to_string())
 }
+#[cfg(not(verus_keep_ghost))]
 pub(super) fn bytes<T: Serialize>(value: &T) -> Result<Vec<u8>, String> {
     let mut result = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
     result.push(b'\n');
     Ok(result)
 }
+#[cfg(not(verus_keep_ghost))]
 fn identity(s: &str) -> Result<(), String> {
     if s.is_empty()
         || !s
@@ -134,18 +261,21 @@ fn identity(s: &str) -> Result<(), String> {
     }
     Ok(())
 }
+#[cfg(not(verus_keep_ghost))]
 fn single_line(s: &str) -> bool {
     !s.trim().is_empty()
         && !s
             .chars()
             .any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}'))
 }
+#[cfg(not(verus_keep_ghost))]
 pub(super) fn content_valid(s: &str) -> Result<(), String> {
     if s.contains("<!-- chrono-instructions") {
         return Err("content contains reserved marker prefix <!-- chrono-instructions".into());
     }
     Ok(())
 }
+#[cfg(not(verus_keep_ghost))]
 impl Skill {
     fn validate(&self) -> Result<(), String> {
         let name = &self.name;
@@ -177,6 +307,7 @@ impl Skill {
         )
     }
 }
+#[cfg(not(verus_keep_ghost))]
 impl Manifest {
     pub fn validate(&self) -> Result<(), String> {
         if self.schema_version != 2
@@ -255,6 +386,7 @@ impl Manifest {
             .unwrap()
     }
 }
+#[cfg(not(verus_keep_ghost))]
 impl Catalog {
     pub fn validate(&self) -> Result<(), String> {
         if self.schema_version != 1 {
@@ -372,23 +504,12 @@ impl Catalog {
     }
 
     pub fn ordered_rule_ids(&self, output: &Output) -> Result<Vec<&str>, String> {
-        if let Some(id) = &output.layout {
-            let layout = self
-                .layouts
-                .iter()
-                .find(|layout| layout.id == *id)
-                .ok_or_else(|| format!("unknown layout {id}"))?;
-            return Ok(layout
-                .sections
-                .iter()
-                .flat_map(|s| s.atoms.iter().map(String::as_str))
-                .collect());
+        if let Some(layout) = layout_for(output.layout.as_ref(), &self.layouts)
+            .map_err(|id| format!("unknown layout {id}"))?
+        {
+            return Ok(layout_ids(&self.layouts[layout].sections));
         }
-        Ok(self
-            .selected_atoms(output)?
-            .into_iter()
-            .map(|a| a.id.as_str())
-            .collect())
+        Ok(selected_ids(&self.selected_atoms(output)?))
     }
 
     pub fn compose(
@@ -486,6 +607,7 @@ impl Catalog {
         Ok((parts.join("\n\n"), locale))
     }
 }
+#[cfg(not(verus_keep_ghost))]
 fn visit<'a>(
     id: &str,
     atoms: &BTreeMap<&str, &'a Atom>,
@@ -516,6 +638,7 @@ fn visit<'a>(
     order.push(atom);
     Ok(())
 }
+#[cfg(not(verus_keep_ghost))]
 impl Output {
     fn marker(&self, edge: &str) -> String {
         format!(
