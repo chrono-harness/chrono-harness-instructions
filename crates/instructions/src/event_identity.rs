@@ -12,6 +12,10 @@ mod verified_bytes;
 #[cfg(not(verus_keep_ghost))]
 use crate::verified_bytes;
 
+#[cfg(verus_keep_ghost)]
+#[path = "github_event.rs"]
+pub mod layout;
+
 verus! {
 
 /// Select the legacy framed grammar from the start of the original Markdown bytes.

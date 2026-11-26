@@ -14,11 +14,49 @@ use vstd::string::StringSliceAdditionalSpecFns;
 #[cfg(verus_keep_ghost)]
 use vstd::vpanic as panic;
 
+#[cfg(not(verus_keep_ghost))]
+use chrono_instructions::github_event as layout;
+#[cfg(verus_keep_ghost)]
+use policy::layout;
+
 verus! {
 fn expect(valid: bool)
     requires valid,
 {
     if !valid { panic!(); }
+}
+
+// The last block's parser offset and content must describe the same bytes as the frame.
+#[cfg(verus_keep_ghost)]
+fn accepts_contiguous_top_level_summary(opening: usize, offset: usize, opening_len: usize,
+    summary: &[u8], closing: usize)
+    requires offset as int == opening as int + opening_len as int + 1,
+        closing as int == offset as int + summary.len() as int + 1,
+{
+    expect(layout::visible_summary(Some((offset, summary)), opening, opening_len, summary, closing));
+    expect(layout::paragraph_matches(Some((offset, summary)), offset, summary));
+}
+
+#[cfg_attr(not(verus_keep_ghost), test)]
+fn event_layout_requires_visible_bytes_exact_offsets_and_a_blank_line() {
+    let text: &[u8] = &[65u8, 0, 128];
+    let wrong: &[u8] = &[65u8, 1, 128];
+    proof { assert(text@[1] != wrong@[1]); }
+    expect(layout::separated(&[]));
+    expect(layout::separated(&[65u8, 10, 10]));
+    expect(!layout::separated(&[10u8]));
+    expect(!layout::separated(&[10u8, 65]));
+    expect(!layout::separated(&[65u8, 10]));
+    expect(!layout::paragraph_matches(None, 2, text));
+    expect(!layout::paragraph_matches(Some((1usize, text)), 2, text));
+    expect(!layout::paragraph_matches(Some((2usize, wrong)), 2, text));
+    expect(layout::visible_summary(Some((2usize, text)), 0, 1, text, 6));
+    expect(!layout::visible_summary(None, 0, 1, text, 6));
+    expect(!layout::visible_summary(Some((2usize, wrong)), 0, 1, text, 6));
+    expect(!layout::visible_summary(Some((2usize, text)), 1, 1, text, 6));
+    expect(!layout::visible_summary(Some((2usize, text)), 0, 1, text, 5));
+    expect(!layout::visible_summary(Some((2usize, text)), 0, 1, text, 7));
+    expect(!layout::visible_summary(Some((0usize, text)), usize::MAX, 0, text, 4));
 }
 
 // State the independent cases using concatenation, arbitrary truncation and a

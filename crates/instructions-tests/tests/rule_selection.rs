@@ -204,3 +204,8 @@ fn delimiter_at_any_offset_prevents_publication() {
     expect(policy::safe_projection(&[],marker));
 }
 }
+
+// The native root checks this version string against the actual --version process output.
+#[cfg(verus_keep_ghost)]
+#[path = "generation.rs"]
+mod generation;

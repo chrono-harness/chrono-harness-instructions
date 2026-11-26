@@ -489,7 +489,11 @@
           "kind": "test-execution",
           "to": "test:instructions-tests"
         }
-      ]
+      ],
+      "verification": {
+        "role": "data",
+        "roots": []
+      }
     },
     {
       "path": "crates/instructions-tests/Cargo.toml",
@@ -546,7 +550,16 @@
           "kind": "test-execution",
           "to": "test:instructions-tests"
         }
-      ]
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions-tests/tests/rule_selection.rs",
+            "operation": "verify.instructions-rule-selection-tests"
+          }
+        ]
+      }
     },
     {
       "path": "crates/instructions-tests/tests/github_event.rs",
@@ -633,7 +646,11 @@
           "kind": "test-execution",
           "to": "test:instructions-tests"
         }
-      ]
+      ],
+      "verification": {
+        "role": "data",
+        "roots": []
+      }
     },
     {
       "path": "crates/instructions/Cargo.toml",
@@ -645,7 +662,11 @@
           "kind": "test-execution",
           "to": "test:instructions-tests"
         }
-      ]
+      ],
+      "verification": {
+        "role": "data",
+        "roots": []
+      }
     },
     {
       "path": "crates/instructions/src/catalog.rs",
@@ -719,7 +740,20 @@
           "kind": "test-execution",
           "to": "test:instructions-tests"
         }
-      ]
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions/src/event_identity.rs",
+            "operation": "verify.instructions-event-identity"
+          },
+          {
+            "path": "crates/instructions-tests/tests/event_identity.rs",
+            "operation": "verify.instructions-event-identity-tests"
+          }
+        ]
+      }
     },
     {
       "path": "crates/instructions/src/inherit.rs",
