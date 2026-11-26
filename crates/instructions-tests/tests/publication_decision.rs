@@ -12,7 +12,29 @@ use vstd::prelude::*;
 #[cfg(verus_keep_ghost)]
 use vstd::vpanic as panic;
 
+#[cfg(not(verus_keep_ghost))]
+#[allow(dead_code)]
+#[path = "../../instructions/examples/publish_rules.rs"]
+mod publish_rules;
+#[cfg(verus_keep_ghost)]
+use policy::publish_rules;
+
+#[path = "../../../.chrono-harness/ci/roadmap.rs"]
+mod roadmap;
+
 verus! {
+#[cfg(verus_keep_ghost)]
+fn hosted_publication_follows_observed_refs_and_diff(current: bool, existing: bool, code: i32) {
+    let base = publish_rules::publication_base(current, existing);
+    if !current { assert(base is Stale); }
+    else if existing { assert(base is Existing); }
+    else { assert(base is First); }
+    let change = publish_rules::staged_change(code);
+    if code == 0 { assert(change == Some(false)); }
+    else if code == 1 { assert(change == Some(true)); }
+    else { assert(change == None::<bool>); }
+}
+
 #[cfg(verus_keep_ghost)]
 fn changed_digest_at_any_byte_rejects(before: &[u8; 32], after: &[u8; 32], at: usize)
     requires at < 32, before@[at as int] != after@[at as int],
@@ -92,4 +114,75 @@ fn immutable_commit_never_rolls_back_and_requires_installed_identity() {
 #[test]
 #[should_panic]
 fn expectations_have_a_real_failure_branch() { expect_true(false); }
+}
+
+#[cfg(not(verus_keep_ghost))]
+#[test]
+fn checked_rule_publication_does_not_push_stale_unchanged_or_failed_data() {
+    use publish_rules::{GitResult, publish};
+    // Each invocation supplies the actual command boundary. The test never runs Git.
+    for (dev, existing, diff, stages, pushes, ok) in [
+        ("newer", true, 1, false, false, true),
+        ("checked", false, 1, true, true, true),
+        ("checked", true, 1, true, true, true),
+        ("checked", true, 0, true, false, true),
+        ("checked", true, 128, true, false, false),
+    ] {
+        let mut calls = Vec::new();
+        let mut staged = false;
+        let result = publish(
+            "checked",
+            |args| {
+                calls.push(args.to_vec().join(" "));
+                let (code, stdout) = match args {
+                    ["ls-remote", "origin", "refs/heads/dev"] => {
+                        (0, format!("{dev}\trefs/heads/dev\n"))
+                    }
+                    [
+                        "ls-remote",
+                        "--heads",
+                        "origin",
+                        "refs/heads/published-rules",
+                    ] => (
+                        0,
+                        if existing {
+                            "base\trefs/heads/published-rules\n"
+                        } else {
+                            ""
+                        }
+                        .into(),
+                    ),
+                    ["diff", "--cached", "--quiet"] => (diff, String::new()),
+                    _ => (0, String::new()),
+                };
+                Ok(GitResult { code, stdout })
+            },
+            || {
+                staged = true;
+                Ok(())
+            },
+        );
+        assert_eq!(result.is_ok(), ok);
+        assert_eq!(staged, stages);
+        let mut expected = vec!["ls-remote origin refs/heads/dev"];
+        if stages {
+            expected.push("ls-remote --heads origin refs/heads/published-rules");
+            if existing {
+                expected.extend([
+                    "fetch --no-tags --depth=1 origin refs/heads/published-rules",
+                    "switch --detach FETCH_HEAD",
+                ]);
+            } else {
+                expected.push("switch --orphan published-rules");
+            }
+            expected.extend([
+                "add -- rules.json methodology-attribution.md trureturing-Apache-2.0.txt",
+                "diff --cached --quiet",
+            ]);
+            if pushes {
+                expected.extend(["-c user.name=github-actions -c user.email=41898282+github-actions[bot]@users.noreply.github.com commit -m Publish rules from checked", "push origin HEAD:refs/heads/published-rules"]);
+            }
+        }
+        assert_eq!(calls, expected);
+    }
 }
