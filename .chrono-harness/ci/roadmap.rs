@@ -33,6 +33,14 @@ mod native {
     use super::*;
     use serde_yaml::Value;
 
+    fn roadmap_digest(source: &str) -> String {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(source.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
     fn locked_roadmap_reference<'a>(
         lock: &Value,
         workflow: &'a [Value],
@@ -105,14 +113,12 @@ mod native {
 
     #[test]
     fn locked_roadmap_rejects_changes_to_its_deployment_contract() {
-        use sha2::{Digest, Sha256};
         let (script, workflow) = deployed_roadmap();
         let lock = deployed_roadmap_lock();
-        let script_hash = format!("{:x}", Sha256::digest(script));
+        let script_hash = roadmap_digest(script);
         let accepted = |candidate: &str, lock: &str| {
-            roadmap_structure(candidate, lock).is_some_and(|structure| {
-                roadmap_matches(&script_hash, &format!("{:x}", Sha256::digest(structure)))
-            })
+            roadmap_structure(candidate, lock)
+                .is_some_and(|structure| roadmap_matches(&script_hash, &roadmap_digest(&structure)))
         };
         for (expected, changed) in [
             ("actions/checkout@", "other/checkout@"),
@@ -138,18 +144,11 @@ mod native {
 
     #[test]
     fn deployed_roadmap_matches_the_selected_template() {
-        use sha2::{Digest, Sha256};
         let (script, workflow) = deployed_roadmap();
-        let digest = |source: &str| {
-            Sha256::digest(source.as_bytes())
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
-        };
-        let script_hash = digest(script);
+        let script_hash = roadmap_digest(script);
         let structure = roadmap_structure(workflow, deployed_roadmap_lock())
             .expect("the roadmap action references must belong to their GitHub workflow lock");
-        let workflow_hash = digest(&structure);
+        let workflow_hash = roadmap_digest(&structure);
         assert!(
             roadmap_matches(&script_hash, &workflow_hash),
             "roadmap.cjs or issue-roadmap.yml differs from the selected template"
