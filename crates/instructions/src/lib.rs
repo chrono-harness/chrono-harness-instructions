@@ -707,14 +707,6 @@ pub mod test_support {
         super::publication_decision::observation::observe(operation)
     }
 
-    pub fn rule_order(catalog: &[u8], output: &[u8]) -> Result<Vec<String>, String> {
-        let catalog: super::Catalog = super::catalog::parse(catalog)?;
-        let output = super::catalog::parse(output)?;
-        catalog
-            .ordered_rule_ids(&output)
-            .map(|ids| ids.into_iter().map(str::to_owned).collect())
-    }
-
     pub fn read_rules(
         root: &std::path::Path,
         fetch: impl FnOnce() -> Result<Vec<u8>, String>,

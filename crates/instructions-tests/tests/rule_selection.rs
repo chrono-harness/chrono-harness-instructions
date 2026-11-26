@@ -260,7 +260,7 @@ mod generation;
 #[cfg(all(test, not(verus_keep_ghost)))]
 #[test]
 fn original_catalog_orders_and_rejections_reach_the_publisher() {
-    use chrono_instructions::test_support::rule_order;
+    use chrono_instructions::rule_selection::rule_order;
     use serde_json::json;
     let catalog = json!({
         "schema_version":1, "locales":[],
