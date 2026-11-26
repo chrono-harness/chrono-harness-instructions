@@ -31,7 +31,7 @@ local_check_retention: true
 manage_roadmap: true
 native_check_keep_seconds: 0
 project_guide: ''
-publisher_workflow: Release
+publisher_workflow: Release chrono-instructions
 release_plan: {}
 repository: chrono-harness/chrono-harness-instructions
 required_check: check
