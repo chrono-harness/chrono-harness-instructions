@@ -1,15 +1,39 @@
+#![allow(unexpected_cfgs)]
+#[cfg(verus_keep_ghost)]
+use vstd::prelude::*;
+#[cfg(not(verus_keep_ghost))]
+use verus_builtin_macros::verus;
+
+verus! {
+pub fn release_version_line() -> (value: &'static str)
+    ensures value@ == "chrono-instructions 0.1.3\n"@,
+{ "chrono-instructions 0.1.3\n" }
+}
+
+#[cfg(not(verus_keep_ghost))]
 use chrono_instructions::{dispatch, generate, init, test_support};
+#[cfg(not(verus_keep_ghost))]
 use std::collections::BTreeMap;
+#[cfg(not(verus_keep_ghost))]
 use std::ffi::OsString;
+#[cfg(not(verus_keep_ghost))]
 use std::fs;
+#[cfg(not(verus_keep_ghost))]
 use std::path::{Path, PathBuf};
+#[cfg(not(verus_keep_ghost))]
 use std::process::{Command, Output, Stdio};
+#[cfg(not(verus_keep_ghost))]
 use tempfile::TempDir;
 
+#[cfg(not(verus_keep_ghost))]
 const METHOD: &str = ".chrono-harness/instructions/methodology.md";
+#[cfg(not(verus_keep_ghost))]
 const CONTEXT: &str = ".chrono-harness/instructions/host-context.md";
+#[cfg(not(verus_keep_ghost))]
 const MANIFEST: &str = ".chrono-harness/instructions/manifest.json";
+#[cfg(not(verus_keep_ghost))]
 const BEGIN: &str = "<!-- chrono-instructions:begin -->";
+#[cfg(not(verus_keep_ghost))]
 const END: &str = "<!-- chrono-instructions:end -->";
 
 #[cfg(unix)]
@@ -169,6 +193,7 @@ fn path_claims_preserve_sources_and_report_the_first_registered_conflict() {
     rejected(&format!("{CONTEXT}: source/control overlap"));
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn assert_alias(host: &Host) {
     let path = host.root.join("AGENTS.md");
     assert!(
@@ -187,6 +212,7 @@ fn assert_alias(host: &Host) {
     assert_eq!(host.read("AGENTS.md"), host.read("CLAUDE.md"));
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn expected_root(body: &[u8], locale: &str, title: Option<&str>) -> Vec<u8> {
     let asset: serde_json::Value = serde_json::from_slice(
         &fs::read(
@@ -206,9 +232,11 @@ fn expected_root(body: &[u8], locale: &str, title: Option<&str>) -> Vec<u8> {
     let heading = title.map(|t| format!("# {t}\n\n")).unwrap_or_default();
     [BEGIN.as_bytes(), format!("\n{frame}\n\nmanifest: `{MANIFEST}`\ncatalog: `.chrono-harness/instructions/catalog.json`\nhost_context: `{CONTEXT}`\n\n{heading}").as_bytes(), body, b"\n", END.as_bytes(), b"\n"].concat()
 }
+#[cfg(not(verus_keep_ghost))]
 fn expected_guide(method: &[u8]) -> Vec<u8> {
     expected_root(method, "und", None)
 }
+#[cfg(not(verus_keep_ghost))]
 fn fresh_default_guide() -> Vec<u8> {
     // Donor/context tests compare with a pristine consumer, independently of
     // presentation order. Layout behavior has its own synthetic contract tests.
@@ -217,6 +245,7 @@ fn fresh_default_guide() -> Vec<u8> {
     host.read("CLAUDE.md")
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn cli_init(
     host: &Host,
     method: Option<&Path>,
@@ -235,6 +264,7 @@ fn cli_init(
     dispatch(&args)
 }
 
+#[cfg(not(verus_keep_ghost))]
 struct Host {
     temp: TempDir,
     root: PathBuf,
@@ -242,6 +272,7 @@ struct Host {
     context: PathBuf,
 }
 
+#[cfg(not(verus_keep_ghost))]
 impl Host {
     fn new() -> Self {
         let temp = tempfile::tempdir().unwrap();
@@ -914,6 +945,7 @@ fn cli_usage_generation_errors_and_success_have_distinct_exit_contracts() {
     assert!(output.stdout.contains("0 file(s) changed"));
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn runtime_policy(host: &Host, max_bytes: u64, max_files: usize) {
     host.write(
         ".chrono-harness/logging.json",
@@ -926,6 +958,7 @@ fn runtime_policy(host: &Host, max_bytes: u64, max_files: usize) {
     );
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn run_cli(cwd: &Path, args: &[OsString]) -> (u32, Output) {
     let child = Command::new(
         std::env::var_os("CHRONO_TEST_INSTRUCTIONS")
@@ -941,6 +974,7 @@ fn run_cli(cwd: &Path, args: &[OsString]) -> (u32, Output) {
     (pid, child.wait_with_output().unwrap())
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn runtime_records(host: &Host) -> Vec<serde_json::Value> {
     String::from_utf8(host.read(".chrono-harness/state/logs/chrono-instructions/runtime.jsonl"))
         .unwrap()
@@ -988,7 +1022,7 @@ fn cli_runtime_logs_success_at_selected_host_and_preserves_machine_output() {
 
     let (_, version) = run_cli(&host.root, &["--version".into()]);
     assert_eq!(version.status.code(), Some(0));
-    assert_eq!(version.stdout, b"chrono-instructions 0.1.2\n");
+    assert_eq!(version.stdout, release_version_line().as_bytes());
     assert!(version.stderr.is_empty());
     let rows = runtime_records(&host);
     assert_eq!(rows.len(), 4);
@@ -1485,6 +1519,7 @@ fn incomplete_fresh_alias_rollback_names_unrestored_link_and_allows_explicit_rec
 }
 
 #[path = "atomic.rs"]
+#[cfg(not(verus_keep_ghost))]
 mod atomic;
 
 #[test]
