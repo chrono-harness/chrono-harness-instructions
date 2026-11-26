@@ -112,6 +112,63 @@ fn registered_guide_and_catalog_failures_preserve_the_entire_host() {
     );
 }
 
+#[test]
+fn path_claims_preserve_sources_and_report_the_first_registered_conflict() {
+    use serde_json::{Value, json};
+    const CATALOG: &str = ".chrono-harness/instructions/catalog.json";
+    let host = Host::new();
+    host.write("CLAUDE.md", "Repository-specific instructions.\n");
+    host.init().unwrap();
+    let mut catalog: Value = serde_json::from_slice(&host.read(CATALOG)).unwrap();
+    let mut manifest: Value = serde_json::from_slice(&host.read(MANIFEST)).unwrap();
+    let mut shared = catalog["atoms"][0].clone();
+    shared["id"] = json!("shared.method");
+    catalog["atoms"].as_array_mut().unwrap().push(shared);
+    manifest["outputs"][0]["roots"] = json!(["legacy.method", "shared.method"]);
+    let mut register = |paths: &[&str]| {
+        let mut outputs = vec![manifest["outputs"][0].clone()];
+        for (i, path) in paths.iter().enumerate() {
+            outputs.push(
+                json!({"id": format!("guide{i}"), "path": path, "format": "markdown",
+                                "locale": "und", "roots": ["legacy.method"]}),
+            );
+        }
+        manifest["outputs"] = json!(outputs);
+        host.write(MANIFEST, serde_json::to_vec(&manifest).unwrap());
+    };
+    host.write(CATALOG, serde_json::to_vec(&catalog).unwrap());
+    // A path sharing the first few bytes need not belong to the same directory.
+    register(&["guide/a", "guide-note", "guide/b"]);
+    generate(&host.root).unwrap();
+    assert!(
+        host.read("CLAUDE.md")
+            .starts_with(b"Repository-specific instructions.")
+    );
+    assert_alias(&host);
+
+    let rejected = |reason: &str| {
+        let before = host.snapshot();
+        let error = generate(&host.root).unwrap_err();
+        assert_eq!(error, reason);
+        assert_eq!(host.snapshot(), before);
+    };
+    register(&[
+        "z-dir/file",
+        "z-dir",
+        "a-dir/second",
+        "a-dir",
+        "a-dir-note",
+        "a-dir/first",
+    ]);
+    rejected("file/ancestor conflict: a-dir and a-dir/first");
+
+    register(&[CONTEXT, "z-dir/child", "z-dir"]);
+    rejected(&format!("{CONTEXT}: source/output/alias overlap"));
+    catalog["atoms"][0]["variants"][0]["source"]["path"] = json!(CONTEXT);
+    host.write(CATALOG, serde_json::to_vec(&catalog).unwrap());
+    rejected(&format!("{CONTEXT}: source/control overlap"));
+}
+
 fn assert_alias(host: &Host) {
     let path = host.root.join("AGENTS.md");
     assert!(
@@ -931,7 +988,7 @@ fn cli_runtime_logs_success_at_selected_host_and_preserves_machine_output() {
 
     let (_, version) = run_cli(&host.root, &["--version".into()]);
     assert_eq!(version.status.code(), Some(0));
-    assert_eq!(version.stdout, b"chrono-instructions 0.1.1\n");
+    assert_eq!(version.stdout, b"chrono-instructions 0.1.2\n");
     assert!(version.stderr.is_empty());
     let rows = runtime_records(&host);
     assert_eq!(rows.len(), 4);

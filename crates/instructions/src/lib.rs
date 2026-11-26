@@ -366,7 +366,10 @@ fn prepare(
     let mut bind = |path: &str, bytes: &[u8]| {
         observed_inputs.insert(path.into(), transaction::sha256(bytes));
     };
-    use rule_selection::catalog_admission::{Registration, accepts_override, registration};
+    use rule_selection::catalog_admission::{
+        PathRole, Registration, accepts_override, alias_conflict, claim_path, descendant_path,
+        registration,
+    };
     let (manifest, new_manifest) = match registration(manifest_before.as_ref(), selected.as_ref()) {
         Registration::Retained(existing) => {
             bind(MANIFEST, &existing.bytes);
@@ -440,29 +443,26 @@ fn prepare(
         .map_err(|e| error(&root.join(&manifest.catalog), e))?;
     // Distinct control files and every output own one path. File variants may
     // explicitly share an input, but cannot alias a control file or output.
-    let mut roles = BTreeMap::new();
-    for (path, role) in [
-        (MANIFEST, "manifest"),
-        (&manifest.catalog, "catalog"),
-        (&manifest.host_context, "host context"),
-        ("AGENTS.md", "root alias"),
+    let mut paths = BTreeSet::new();
+    for path in [
+        MANIFEST,
+        &manifest.catalog,
+        &manifest.host_context,
+        "AGENTS.md",
     ] {
-        if roles.insert(path.to_owned(), role).is_some() {
-            return Err(format!("{path}: source/control/alias overlap"));
-        }
+        claim_path(&mut paths, path.to_owned(), PathRole::Control)
+            .map_err(|reason| format!("{path}: {reason}"))?;
     }
     let file_inputs: BTreeSet<_> = cat.file_inputs().into_iter().collect();
     for path in &file_inputs {
         relative(path, true)?;
-        if roles.insert((*path).to_owned(), "file source").is_some() {
-            return Err(format!("{path}: source/control overlap"));
-        }
+        claim_path(&mut paths, (*path).to_owned(), PathRole::Source)
+            .map_err(|reason| format!("{path}: {reason}"))?;
     }
     for output in &manifest.outputs {
         relative(&output.path, false)?;
-        if roles.insert(output.path.clone(), "output").is_some() {
-            return Err(format!("{}: source/output/alias overlap", output.path));
-        }
+        claim_path(&mut paths, output.path.clone(), PathRole::Output)
+            .map_err(|reason| format!("{}: {reason}", output.path))?;
     }
     // macOS commonly uses case-insensitive volumes. Refuse inconsistent case
     // or normalization spellings, including prospective directories, even on a case-sensitive
@@ -470,19 +470,18 @@ fn prepare(
     #[cfg(target_os = "macos")]
     {
         let mut spellings = BTreeMap::new();
-        for path in roles.keys() {
+        for path in &paths {
             let mut prefix = String::new();
             for component in path.split('/') {
                 if !prefix.is_empty() {
                     prefix.push('/');
                 }
                 prefix.push_str(component);
-                if let Some(previous) = spellings.insert(mac_path_key(&prefix)?, prefix.clone()) {
-                    if previous != prefix {
-                        return Err(format!(
-                            "case alias or normalization alias in registered paths: {previous} and {prefix}"
-                        ));
-                    }
+                let old = spellings.insert(mac_path_key(&prefix)?, prefix.clone());
+                if let Some(previous) = alias_conflict(old.as_ref(), &prefix, true) {
+                    return Err(format!(
+                        "case alias or normalization alias in registered paths: {previous} and {prefix}"
+                    ));
                 }
             }
         }
@@ -491,21 +490,23 @@ fn prepare(
     {
         use std::os::unix::fs::MetadataExt;
         let mut identities = BTreeMap::new();
-        for path in roles.keys() {
+        for path in &paths {
             if let Some(meta) = metadata(&root.join(path))? {
                 if meta.file_type().is_file() {
-                    if let Some(previous) = identities.insert((meta.dev(), meta.ino()), path) {
+                    let old = identities.insert((meta.dev(), meta.ino()), path);
+                    if let Some(previous) = alias_conflict(old, path, false) {
                         return Err(format!("actual file alias: {previous} and {path}"));
                     }
                 }
             }
         }
     }
-    for path in roles.keys() {
-        for other in roles.keys() {
-            if other.starts_with(&format!("{path}/")) {
-                return Err(format!("file/ancestor conflict: {path} and {other}"));
-            }
+    for path in &paths {
+        // Descendants form one ordered interval beginning at "path/".
+        if let Some(other) = paths.range(format!("{path}/")..).next()
+            && descendant_path(path.as_bytes(), other.as_bytes())
+        {
+            return Err(format!("file/ancestor conflict: {path} and {other}"));
         }
         parents(&root, path, &mut directories)?;
     }

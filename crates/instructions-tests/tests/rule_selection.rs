@@ -14,6 +14,40 @@ use vstd::vpanic as panic;
 
 verus! {
 
+/// The role that first claimed a name can never be displaced by the next role.
+fn registered_role_collision() {
+    use policy::catalog_admission::{claim_path, PathRole};
+    let mut names = std::collections::BTreeSet::<u8>::new();
+    let first = claim_path(&mut names, 1, PathRole::Control);
+    assert(first is Ok);
+    let control = claim_path(&mut names, 1, PathRole::Control);
+    assert(control == Err::<(),&str>("source/control/alias overlap"));
+    let input = claim_path(&mut names, 1, PathRole::Source);
+    assert(input == Err::<(),&str>("source/control overlap"));
+    let output = claim_path(&mut names, 1, PathRole::Output);
+    assert(output == Err::<(),&str>("source/output/alias overlap"));
+}
+
+fn folded_name_or_file_identity(current: &String, old: &String, allow_same: bool) {
+    use policy::catalog_admission::alias_conflict;
+    let fresh = alias_conflict(None, current, allow_same);
+    assert(fresh is None);
+    let existing = alias_conflict(Some(old), current, allow_same);
+    assert(existing == (if allow_same && current@ == old@ { None } else { Some(old) }));
+}
+
+fn first_sorted_candidate_can_only_be_a_descendant_at_a_separator(path: &[u8], other: &[u8]) {
+    let yes = policy::catalog_admission::descendant_path(path,other);
+    proof {
+        if other.len() > path.len() {
+            let prefix = other@.subrange(0, path.len() as int);
+            assert((prefix =~= path@) == (forall|i:int| 0 <= i < path.len() ==> #[trigger] path@[i] == other@[i]));
+        }
+    }
+    assert(yes == (other.len() > path.len() && other@[path.len() as int] == 47u8 &&
+        forall|i:int| 0 <= i < path.len() ==> #[trigger] path@[i] == other@[i]));
+}
+
 fn existing_registration_always_supplies_its_original_value(manifest: u64, input: Option<u64>) {
     use policy::catalog_admission::{registration, Registration};
     let choice = registration(Some(manifest), input);
