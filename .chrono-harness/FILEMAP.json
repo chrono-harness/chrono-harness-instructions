@@ -78,6 +78,27 @@
       ]
     },
     {
+      "path": ".chrono-harness/ci/roadmap.rs",
+      "owner": "host",
+      "surface": "test",
+      "cost": "unmeasured",
+      "edges": [
+        {
+          "kind": "test-execution",
+          "to": "test:instructions-tests"
+        }
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions-tests/tests/publication_decision.rs",
+            "operation": "verify.instructions-publication-tests"
+          }
+        ]
+      }
+    },
+    {
       "path": ".chrono-harness/ci/units.json",
       "owner": "host",
       "surface": "product",
@@ -340,7 +361,21 @@
       "owner": "host",
       "surface": "product",
       "cost": "unmeasured",
-      "edges": []
+      "edges": [
+        {
+          "kind": "test-execution",
+          "to": "test:instructions-tests"
+        }
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions-tests/tests/publication_decision.rs",
+            "operation": "verify.instructions-publication-tests"
+          }
+        ]
+      }
     },
     {
       "path": ".github/workflows/actions.lock",
@@ -390,7 +425,21 @@
       "owner": "host",
       "surface": "product",
       "cost": "unmeasured",
-      "edges": []
+      "edges": [
+        {
+          "kind": "test-execution",
+          "to": "test:instructions-tests"
+        }
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions-tests/tests/publication_decision.rs",
+            "operation": "verify.instructions-publication-tests"
+          }
+        ]
+      }
     },
     {
       "path": ".github/workflows/publish-rules.yml",

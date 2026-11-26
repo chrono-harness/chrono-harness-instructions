@@ -19,6 +19,9 @@ mod publish_rules;
 #[cfg(verus_keep_ghost)]
 use policy::publish_rules;
 
+#[path = "../../../.chrono-harness/ci/roadmap.rs"]
+mod roadmap;
+
 verus! {
 #[cfg(verus_keep_ghost)]
 fn hosted_publication_follows_observed_refs_and_diff(current: bool, existing: bool, code: i32) {
