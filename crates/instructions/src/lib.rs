@@ -1,31 +1,121 @@
 //! Explicit host instruction generation. No judge execution or host discovery.
 
+#[cfg(verus_keep_ghost)]
+use super::verified_bytes;
+#[cfg(not(verus_keep_ghost))]
+use verus_builtin_macros::verus;
+#[cfg(verus_keep_ghost)]
+use vstd::{prelude::*, string::StringSliceAdditionalSpecFns};
+
+verus! {
+pub(crate) enum PathUse { Allowed, NonCanonical, Reserved, ExternalSource }
+
+/// A registered relative path has only nonempty, named components.
+pub(crate) fn canonical_component(part: &[u8]) -> (valid: bool)
+    ensures valid == (part.len() > 0
+        && !(part.len() == 1 && part@[0] == 46u8)
+        && !(part.len() == 2 && part@[0] == 46u8 && part@[1] == 46u8)),
+{
+    match part.len() {
+        0 => false,
+        1 => part[0] != 46u8,
+        2 => part[0] != 46u8 || part[1] != 46u8,
+        _ => true,
+    }
+}
+
+pub open spec fn under(path: Seq<u8>, directory: Seq<u8>) -> bool {
+    path.len() > directory.len()
+        && path.subrange(0, directory.len() as int) == directory
+        && path[directory.len() as int] == 47u8
+}
+
+/// Distinguish a registered directory, its descendants and unrelated prefix matches.
+pub(crate) fn directory_relation(path: &[u8], directory: &[u8]) -> (relation: (bool, bool))
+    ensures relation.0 == (path@ == directory@), relation.1 == under(path@, directory@),
+{
+    if path.len() < directory.len() { return (false,false); }
+    let same = verified_bytes::equal(&path[0..directory.len()], directory);
+    if path.len() == directory.len() {
+        assert(path@.subrange(0, directory.len() as int) =~= path@);
+        (same, false)
+    } else {
+        (false, same && path[directory.len()] == 47u8)
+    }
+}
+
+pub(crate) fn registered_path(path: &[u8], canonical: bool, source: bool) -> (result: PathUse)
+    ensures ({
+        let state = ".chrono-harness/state".spec_bytes();
+        let retention = ".chrono-harness/retention.json".spec_bytes();
+        let reserved = path@ == state || under(path@, state)
+            || path@ == retention || under(path@, retention);
+        let external = source && !under(path@, ".chrono-harness".spec_bytes());
+        &&& (result is NonCanonical) == !canonical
+        &&& (result is Reserved) == (canonical && reserved)
+        &&& (result is ExternalSource) == (canonical && !reserved && external)
+        &&& (result is Allowed) == (canonical && !reserved && !external)
+    }),
+{
+    if !canonical { return PathUse::NonCanonical; }
+    let state = directory_relation(path, ".chrono-harness/state".as_bytes());
+    let retention = directory_relation(path, ".chrono-harness/retention.json".as_bytes());
+    if state.0 || state.1 || retention.0 || retention.1 { return PathUse::Reserved; }
+    if source && !directory_relation(path, ".chrono-harness".as_bytes()).1 {
+        return PathUse::ExternalSource;
+    }
+    PathUse::Allowed
+}
+}
+
+#[cfg(not(verus_keep_ghost))]
 mod catalog;
+#[cfg(not(verus_keep_ghost))]
 pub mod event_identity;
+#[cfg(not(verus_keep_ghost))]
 pub mod github_event;
+#[cfg(not(verus_keep_ghost))]
 mod inherit;
 #[doc(hidden)]
+#[cfg(not(verus_keep_ghost))]
 pub mod publication_decision;
+#[cfg(not(verus_keep_ghost))]
 pub mod rule_selection;
+#[cfg(not(verus_keep_ghost))]
 mod transaction;
+#[cfg(not(verus_keep_ghost))]
 mod verified_bytes;
 
+#[cfg(not(verus_keep_ghost))]
 use catalog::{Atom, Catalog, Content, Format, Manifest, Variant};
+#[cfg(not(verus_keep_ghost))]
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(not(verus_keep_ghost))]
 use std::ffi::{OsStr, OsString};
+#[cfg(not(verus_keep_ghost))]
 use std::fs;
+#[cfg(not(verus_keep_ghost))]
 use std::path::{Path, PathBuf};
+#[cfg(not(verus_keep_ghost))]
 use transaction::{Change, Fault, Snapshot};
 
+#[cfg(not(verus_keep_ghost))]
 const MANIFEST: &str = ".chrono-harness/instructions/manifest.json";
+#[cfg(not(verus_keep_ghost))]
 const METHOD: &str = ".chrono-harness/instructions/methodology.md";
+#[cfg(not(verus_keep_ghost))]
 const CONTEXT: &str = ".chrono-harness/instructions/host-context.md";
+#[cfg(not(verus_keep_ghost))]
 const BEGIN: &[u8] = b"<!-- chrono-instructions:begin -->";
+#[cfg(not(verus_keep_ghost))]
 const END: &[u8] = b"<!-- chrono-instructions:end -->";
+#[cfg(not(verus_keep_ghost))]
 const RESERVED: &[u8] = b"<!-- chrono-instructions";
+#[cfg(not(verus_keep_ghost))]
 const CATALOG: &str = ".chrono-harness/instructions/catalog.json";
 
+#[cfg(not(verus_keep_ghost))]
 struct InitSources {
     methodology: Option<Vec<u8>>,
     context: Option<Vec<u8>>,
@@ -33,6 +123,7 @@ struct InitSources {
     external: Vec<transaction::ExternalInput>,
 }
 
+#[cfg(not(verus_keep_ghost))]
 impl InitSources {
     fn read(methodology: Option<&Path>, context: Option<&Path>) -> Result<Self, String> {
         let mut external = Vec::new();
@@ -53,6 +144,7 @@ impl InitSources {
     }
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn managed_block(manifest: &Manifest, frame: &str, body: &str) -> Vec<u8> {
     let mut block = BEGIN.to_vec();
     block.extend_from_slice(
@@ -68,10 +160,12 @@ fn managed_block(manifest: &Manifest, frame: &str, body: &str) -> Vec<u8> {
     block
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn error(path: &Path, message: impl std::fmt::Display) -> String {
     format!("{}: {message}", path.display())
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn metadata(path: &Path) -> Result<Option<fs::Metadata>, String> {
     match fs::symlink_metadata(path) {
         Ok(meta) => Ok(Some(meta)),
@@ -80,6 +174,7 @@ fn metadata(path: &Path) -> Result<Option<fs::Metadata>, String> {
     }
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn regular(path: &Path) -> Result<Option<Snapshot>, String> {
     let Some(meta) = metadata(path)? else {
         return Ok(None);
@@ -135,12 +230,14 @@ fn regular(path: &Path) -> Result<Option<Snapshot>, String> {
     }))
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn utf8(path: &Path, bytes: &[u8]) -> Result<(), String> {
     std::str::from_utf8(bytes)
         .map(|_| ())
         .map_err(|e| error(path, format!("expected UTF-8: {e}")))
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn positions(bytes: &[u8], needle: &[u8]) -> Vec<usize> {
     bytes
         .windows(needle.len())
@@ -149,6 +246,7 @@ fn positions(bytes: &[u8], needle: &[u8]) -> Vec<usize> {
         .collect()
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn render(path: &Path, bytes: &[u8], block: &[u8]) -> Result<Vec<u8>, String> {
     use rule_selection::GuideEdit;
     let reserved = positions(bytes, RESERVED);
@@ -190,30 +288,23 @@ fn render(path: &Path, bytes: &[u8], block: &[u8]) -> Result<Vec<u8>, String> {
 
 // Canonical lexical paths keep the registry unambiguous; existing ancestors are
 // checked separately before reading or writing any registered file.
+#[cfg(not(verus_keep_ghost))]
 fn relative(path: &str, source: bool) -> Result<(), String> {
     catalog::content_valid(path)?;
-    if path.is_empty()
-        || path.contains('\\')
-        || path.chars().any(char::is_control)
-        || path
+    let canonical = !Path::new(path).is_absolute()
+        && !path.contains('\\')
+        && !path.chars().any(char::is_control)
+        && path
             .split('/')
-            .any(|p| p.is_empty() || p == "." || p == "..")
-        || Path::new(path).is_absolute()
-    {
-        return Err(format!("{path:?}: expected canonical relative path"));
-    }
-    if [".chrono-harness/state", ".chrono-harness/retention.json"]
-        .iter()
-        .any(|reserved| path == *reserved || path.starts_with(&format!("{reserved}/")))
-    {
-        return Err(format!("{path}: reserved instruction state or policy path"));
-    }
-    if source && !path.starts_with(".chrono-harness/") {
-        return Err(format!(
+            .all(|part| canonical_component(part.as_bytes()));
+    match registered_path(path.as_bytes(), canonical, source) {
+        PathUse::Allowed => Ok(()),
+        PathUse::NonCanonical => Err(format!("{path:?}: expected canonical relative path")),
+        PathUse::Reserved => Err(format!("{path}: reserved instruction state or policy path")),
+        PathUse::ExternalSource => Err(format!(
             "{path}: registered inputs must be under .chrono-harness/"
-        ));
+        )),
     }
-    Ok(())
 }
 
 // Use Unicode case folding, then the platform's filesystem representation for
@@ -221,6 +312,7 @@ fn relative(path: &str, source: bool) -> Result<(), String> {
 // This conservatively rejects ambiguous spellings even on case-sensitive volumes;
 // it does not change registered paths or probe the filesystem with writes.
 #[cfg(target_os = "macos")]
+#[cfg(not(verus_keep_ghost))]
 fn mac_path_key(path: &str) -> Result<Vec<u8>, String> {
     use std::ffi::{c_char, c_void};
     #[link(name = "CoreFoundation", kind = "framework")]
@@ -287,6 +379,7 @@ fn mac_path_key(path: &str) -> Result<Vec<u8>, String> {
     }
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn parents(root: &Path, relative: &str, directories: &mut BTreeSet<PathBuf>) -> Result<(), String> {
     let mut path = root.to_path_buf();
     let parts: Vec<_> = relative.split('/').collect();
@@ -308,6 +401,7 @@ fn parents(root: &Path, relative: &str, directories: &mut BTreeSet<PathBuf>) -> 
     Ok(())
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn required(root: &Path, path: &str) -> Result<Vec<u8>, String> {
     let full = root.join(path);
     let snapshot = regular(&full)?.ok_or_else(|| error(&full, "registered source is missing"))?;
@@ -315,6 +409,7 @@ fn required(root: &Path, path: &str) -> Result<Vec<u8>, String> {
     Ok(snapshot.bytes)
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn raw_catalog(locale: &str) -> Result<Catalog, String> {
     let mut cat: Catalog = catalog::parse(catalog::DEFAULT_CATALOG.as_bytes())?;
     if !cat.locales.iter().any(|l| l.id == locale) {
@@ -333,6 +428,7 @@ fn raw_catalog(locale: &str) -> Result<Catalog, String> {
     cat.layouts.clear();
     Ok(cat)
 }
+#[cfg(not(verus_keep_ghost))]
 fn raw_manifest(locale: &str) -> Result<Manifest, String> {
     let mut manifest: Manifest = catalog::parse(catalog::DEFAULT_MANIFEST.as_bytes())?;
     let output = &mut manifest.outputs[0];
@@ -343,6 +439,7 @@ fn raw_manifest(locale: &str) -> Result<Manifest, String> {
     Ok(manifest)
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn prepare(
     host: &Path,
     mut selected: Option<InitSources>,
@@ -503,8 +600,10 @@ fn prepare(
     }
     for path in &paths {
         // Descendants form one ordered interval beginning at "path/".
-        if let Some(other) = paths.range(format!("{path}/")..).next()
-            && descendant_path(path.as_bytes(), other.as_bytes())
+        if let Some(other) = paths
+            .range(format!("{path}/")..)
+            .next()
+            .filter(|other| descendant_path(path.as_bytes(), other.as_bytes()))
         {
             return Err(format!("file/ancestor conflict: {path} and {other}"));
         }
@@ -606,6 +705,7 @@ fn prepare(
     Ok((changes, directories, bindings))
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn root_guides(root: &Path, block: &[u8], changes: &mut Vec<Change>) -> Result<bool, String> {
     let agents = root.join("AGENTS.md");
     let claude = root.join("CLAUDE.md");
@@ -659,6 +759,7 @@ fn root_guides(root: &Path, block: &[u8], changes: &mut Vec<Change>) -> Result<b
 
 /// Retain exact selected UTF-8 bytes and publish the literal root guide and relative alias.
 /// Repeated init refuses differing retained sources. The host must already exist.
+#[cfg(not(verus_keep_ghost))]
 pub fn init(host: &Path, methodology: &Path, context: &Path) -> Result<Vec<PathBuf>, String> {
     init_with_defaults(host, Some(methodology), Some(context))
 }
@@ -666,6 +767,7 @@ pub fn init(host: &Path, methodology: &Path, context: &Path) -> Result<Vec<PathB
 /// Initialize with independently optional source files. For a new host, omissions
 /// select the embedded general core and empty context. For a registered host,
 /// omissions retain validated canonical bytes; explicit conflicts still fail.
+#[cfg(not(verus_keep_ghost))]
 pub fn init_with_defaults(
     host: &Path,
     methodology: Option<&Path>,
@@ -674,6 +776,7 @@ pub fn init_with_defaults(
     run_init(host, methodology, context, None, Fault::default())
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn run_init(
     host: &Path,
     methodology: Option<&Path>,
@@ -691,16 +794,19 @@ fn run_init(
 }
 
 /// Validate registered sources and refresh the guide and alias while preserving host-owned bytes.
+#[cfg(not(verus_keep_ghost))]
 pub fn generate(host: &Path) -> Result<Vec<PathBuf>, String> {
     run_generate(host, Fault::default())
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn run_generate(host: &Path, fault: Fault) -> Result<Vec<PathBuf>, String> {
     transaction::run(host, fault, |root| prepare(root, None))
 }
 
 /// Bounded IO-failure injection available only in the dedicated test build.
 #[cfg(feature = "test-support")]
+#[cfg(not(verus_keep_ghost))]
 pub mod test_support {
     /// Observe one isolated consumer operation on this thread.
     pub fn with_repair_observation<T>(operation: impl FnOnce() -> T) -> (T, bool) {
@@ -779,6 +885,7 @@ pub mod test_support {
 
 /// CLI transport result; exit 0 complete, 2 usage, 1 input/generation/IO failure.
 #[derive(Debug)]
+#[cfg(not(verus_keep_ghost))]
 pub struct CliOutput {
     pub exit_code: u8,
     pub stdout: String,
@@ -786,15 +893,18 @@ pub struct CliOutput {
 }
 
 /// Accept OS paths without shell interpolation or UTF-8 conversion of arguments.
+#[cfg(not(verus_keep_ghost))]
 pub fn dispatch(args: &[OsString]) -> CliOutput {
     let reply = |exit_code, stdout: String, stderr: String| CliOutput {
         exit_code,
         stdout,
         stderr,
     };
-    if let [op] = args
-        && let Some(op @ ("event-regex" | "event-read" | "event-format")) = op.to_str()
-    {
+    let single = match args {
+        [op] => op.to_str(),
+        _ => None,
+    };
+    if let Some(op @ ("event-regex" | "event-read" | "event-format")) = single {
         return match github_event::command(op, std::io::stdin().lock()) {
             Ok(output) => reply(0, output, String::new()),
             Err(error) => reply(1, String::new(), format!("E_GITHUB_EVENT: {error}\n")),

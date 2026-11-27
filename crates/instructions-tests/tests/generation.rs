@@ -6,8 +6,8 @@ use vstd::prelude::*;
 
 verus! {
 pub fn release_version_line() -> (value: &'static str)
-    ensures value@ == "chrono-instructions 0.1.6\n"@,
-{ "chrono-instructions 0.1.6\n" }
+    ensures value@ == "chrono-instructions 0.1.7\n"@,
+{ "chrono-instructions 0.1.7\n" }
 }
 
 #[cfg(not(verus_keep_ghost))]
@@ -264,6 +264,53 @@ fn cli_init(
         }
     }
     dispatch(&args)
+}
+
+#[test]
+fn generate_uses_registered_path_components_and_preserves_rejected_hosts() {
+    let host = Host::new();
+    host.init().unwrap();
+    let mut manifest: serde_json::Value = serde_json::from_slice(&host.read(MANIFEST)).unwrap();
+    let mut output = manifest["outputs"][0].clone();
+    output["id"] = "notes".into();
+    output["format"] = "markdown".into();
+    output["title"] = "Notes".into();
+    manifest["outputs"].as_array_mut().unwrap().push(output);
+    let last = manifest["outputs"].as_array().unwrap().len() - 1;
+    for path in ["docs/项目/说明.md", ".chrono-harness/state-notes/guide.md"] {
+        manifest["outputs"][last]["path"] = path.into();
+        host.write(MANIFEST, serde_json::to_vec(&manifest).unwrap());
+        generate(&host.root).unwrap();
+        assert!(!host.read(path).is_empty());
+    }
+    for (path, diagnostic) in [
+        ("docs//notes.md", "expected canonical relative path"),
+        ("docs/./notes.md", "expected canonical relative path"),
+        (
+            ".chrono-harness/state/notes.md",
+            "reserved instruction state or policy path",
+        ),
+        (
+            ".chrono-harness/retention.json",
+            "reserved instruction state or policy path",
+        ),
+    ] {
+        manifest["outputs"][last]["path"] = path.into();
+        host.write(MANIFEST, serde_json::to_vec(&manifest).unwrap());
+        let before = host.snapshot();
+        assert!(generate(&host.root).unwrap_err().ends_with(diagnostic));
+        assert_eq!(host.snapshot(), before);
+    }
+    manifest["outputs"][last]["path"] = "docs/notes.md".into();
+    manifest["host_context"] = "docs/context.md".into();
+    host.write(MANIFEST, serde_json::to_vec(&manifest).unwrap());
+    let before = host.snapshot();
+    assert!(
+        generate(&host.root)
+            .unwrap_err()
+            .ends_with("registered inputs must be under .chrono-harness/")
+    );
+    assert_eq!(host.snapshot(), before);
 }
 
 #[cfg(not(verus_keep_ghost))]
