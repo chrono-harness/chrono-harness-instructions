@@ -533,7 +533,11 @@
           "kind": "test-execution",
           "to": "test:instructions-tests"
         }
-      ]
+      ],
+      "verification": {
+        "role": "data",
+        "roots": []
+      }
     },
     {
       "path": "assets/instructions/default-manifest.json",
@@ -545,7 +549,11 @@
           "kind": "test-execution",
           "to": "test:instructions-tests"
         }
-      ]
+      ],
+      "verification": {
+        "role": "data",
+        "roots": []
+      }
     },
     {
       "path": "assets/instructions/github-event-v2.regex",
@@ -1166,6 +1174,17 @@
       }
     },
     {
+      "path": "docs/examples/recovery.smt2",
+      "owner": "host",
+      "surface": "product",
+      "cost": "unmeasured",
+      "edges": [],
+      "verification": {
+        "role": "data",
+        "roots": []
+      }
+    },
+    {
       "path": "docs/licenses/methodology-attribution.md",
       "owner": "host",
       "surface": "product",
@@ -1178,6 +1197,17 @@
     },
     {
       "path": "docs/licenses/trureturing-Apache-2.0.txt",
+      "owner": "host",
+      "surface": "product",
+      "cost": "unmeasured",
+      "edges": [],
+      "verification": {
+        "role": "data",
+        "roots": []
+      }
+    },
+    {
+      "path": "docs/recovery-model.md",
       "owner": "host",
       "surface": "product",
       "cost": "unmeasured",

@@ -13,10 +13,12 @@
       "roots": [
         "goal.deliverable",
         "action.autonomy",
+        "communication.plain-language",
         "candidate.isolation",
         "reuse.search",
         "registry.explicit",
         "evidence.failure",
+        "recovery.bounded",
         "cost.measure",
         "owner.canonical",
         "core.small-projects",

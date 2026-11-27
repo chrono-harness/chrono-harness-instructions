@@ -1656,6 +1656,26 @@
       ]
     },
     {
+      "id": "communication.plain-language",
+      "requires": [],
+      "variants": [
+        {
+          "locale": "zh-CN",
+          "source": {
+            "type": "inline",
+            "text": "给第一次接手的人写。先说谁做了什么、读者现在能做什么。用短句和具体的文件、动作或数字。给抽象结论配一个读者能核实的例子。例如写“8 个测试过了 7 个。断网用例预期退出 2，实际退出 0”，并附上原始结果。用比喻时说清哪项行为相同、怎样检验、比喻到哪里就失效。例如文件锁像一把共用钥匙，第二个遵守协议的写者要等第一个释放锁。绕过锁的写者仍能修改文件。"
+          }
+        },
+        {
+          "locale": "en",
+          "source": {
+            "type": "inline",
+            "text": "Write for someone picking up the work for the first time. Say who did what and what the reader can do now. Use short sentences. Name a file, an action or a count. Give an example the reader can check. For instance, “Seven of eight tests passed. The offline case expected exit 2 and got 0.” Link the original result. When an analogy helps, name the shared behavior, how to check it and where it breaks down. A file lock resembles a shared key. A second cooperating writer waits until the first releases it. A writer that ignores the lock can still change the file."
+          }
+        }
+      ]
+    },
+    {
       "id": "collaboration.handoff",
       "requires": [],
       "variants": [
@@ -1851,6 +1871,26 @@
           "source": {
             "type": "inline",
             "text": "Adjacency is not causation. Pin last success, first failure, candidate change, environment and named failure. Locate the turn; test a minimal reproduction or counterfactual fixing other inputs. Check baseline/candidate mismatches and alternatives. Removing only that change must remove the same failure, else cause remains unverified."
+          }
+        }
+      ]
+    },
+    {
+      "id": "recovery.bounded",
+      "requires": [],
+      "variants": [
+        {
+          "locale": "zh-CN",
+          "source": {
+            "type": "inline",
+            "text": "在已有权限和预算内自行处置异常。保留原始输入、错误和退出状态。先查操作是否结束、是否已经写入。上传超时时，按请求标识查服务端记录，再核对内容摘要。目标已达成就继续。同一请求若有仍然有效的原子去重保证，可以用原键和原输入重放。否则，先确认旧请求已结束且没有生效。一时查无记录仍可能是在排队。结果仍未知就保留原句柄，等完成通知。有证据表明错误是暂时的、同一输入能安全重放，且剩余次数、时间和资源允许时，才重试受影响的操作。例如连接中断后重新读取同一版本的文件。每次重试都计入原预算。\n\n同一错误再现或已知能稳定复现时，带着首次失败的输入到负责处修复。编译错误看首个诊断，测试断言失败用原用例验证修法。写盘报空间不足时，核对目标卷，在已登记、可回收的目录释放空间。进程被系统终止时，先核实内存和同时运行的任务，再按实测容量调整并发。恢复后重做受影响的检查，读回实际结果。预算用尽或副作用无法核对时，交代原错、已做的事和恢复条件，继续能独立完成的工作。"
+          }
+        },
+        {
+          "locale": "en",
+          "source": {
+            "type": "inline",
+            "text": "Handle failures within the existing authority and budget. Keep the original input, error and exit status. Check whether the operation has finished and what it wrote. After an upload times out, look up the request on the server and compare the content digest. Continue if the intended effect is verified. An active atomic deduplication guarantee can make a replay safe with the same key and input. Otherwise establish that the old request ended without taking effect. An empty lookup may mean the request is still queued. If the outcome is still unknown, keep the original handle and wait for completion. Retry the affected operation only when evidence supports a transient cause, replaying the same input is safe, and the remaining attempt, time and resource budgets allow it. A broken connection while reading a fixed file version is one example. Charge each retry to the original budget.\n\nWhen the same failure recurs or already reproduces reliably, take the first failing input to the component responsible and fix it. For a compiler error, start with the first diagnostic. For a failed assertion, run the original test against the fix. If a write runs out of space, identify the affected volume and reclaim eligible files in a registered directory. If the OS kills a process, check memory and concurrent jobs before adjusting concurrency to measured capacity. Run the affected check with the original input after the repair and inspect the result. When the budget runs out or side effects cannot be verified, report the original error, actions taken and the condition for resuming. Continue independent work."
           }
         }
       ]
@@ -2458,6 +2498,7 @@
         "artifact.temporary",
         "structure.pressure",
         "collaboration.current-result",
+        "communication.plain-language",
         "collaboration.handoff",
         "state.recovery-context",
         "transport.literal",
@@ -2468,6 +2509,7 @@
         "change.debt",
         "policy.proportional",
         "recovery.causal",
+        "recovery.bounded",
         "recovery.validate",
         "judge.counterexamples",
         "signal.meaning",
@@ -2692,6 +2734,7 @@
             "core.repair-producer",
             "state.recovery-context",
             "recovery.causal",
+            "recovery.bounded",
             "recovery.validate"
           ]
         },
@@ -2712,6 +2755,7 @@
             "collaboration.github-contribution",
             "collaboration.combine",
             "collaboration.current-result",
+            "communication.plain-language",
             "collaboration.handoff",
             "artifact.results",
             "artifact.substance",
@@ -2886,6 +2930,7 @@
           "atoms": [
             "goal.deliverable",
             "action.autonomy",
+            "communication.plain-language",
             "candidate.isolation"
           ]
         },
@@ -2905,6 +2950,7 @@
             "reuse.search",
             "registry.explicit",
             "evidence.failure",
+            "recovery.bounded",
             "cost.measure"
           ]
         },
