@@ -8,7 +8,7 @@
 
 `init --host-root DIR` 在宿主内登记输入并创建指南；`generate --host-root DIR` 根据已登记的输入更新指南。运行期间独占该宿主，失败时仅回滚仍与本次发布匹配的对象。成功或完整回滚后自动删除临时目录。回滚遇到独立改动时，错误中给出精确路径和仍保存原件的工作树临时目录。中断后从 Git 核对工作树并重新执行。长期保留的源文件和生成指南归宿主 Git 管理。
 
-宿主可通过 `.chrono-harness/logging.json` 选择有限大小和份数的日志。指令工具只写所选日志目录中的 `chrono-instructions/` 子目录。临时目录随任务工作树回收。
+如需文件日志，安装 `chrono-diagnostics` 并在宿主的 `.chrono-harness/logging.json` 选择目录、大小、份数和可选保留时间。指令工具通过已发布的 `cli-events-v1` 协议交给该工具写入。查看所选目录下的 `runtime.jsonl`，按 `producer=chrono-instructions` 选取记录。旧版写在该目录的 `chrono-instructions/` 子目录，升级前仍需留存的日志可转入宿主的持久存储。未配置文件日志的安装可以单独运行。
 
 从[本工具的发行页](https://github.com/chrono-harness/chrono-harness-instructions/releases)选定标签，下载对应平台的二进制、`methodology-attribution.md`、`trureturing-Apache-2.0.txt` 和 `SHA256SUMS`，验算 SHA-256 后安装为工作树外的 `chrono-instructions`。升级和回退按所需标签独立替换该二进制。
 
