@@ -6,8 +6,8 @@ use vstd::prelude::*;
 
 verus! {
 pub fn release_version_line() -> (value: &'static str)
-    ensures value@ == "chrono-instructions 0.1.4\n"@,
-{ "chrono-instructions 0.1.4\n" }
+    ensures value@ == "chrono-instructions 0.1.5\n"@,
+{ "chrono-instructions 0.1.5\n" }
 }
 
 #[cfg(not(verus_keep_ghost))]
@@ -1593,23 +1593,27 @@ fn live_rule_selection_follows_upstream_and_preserves_local_work() {
         })).unwrap()
     };
     let old = [("first", "old")];
-    let new = [("first", "edited"), ("next", "added")];
+    let new = [("first", " edited\r\n正文  "), ("next", "added")];
     let load = |entries: &[(&str, &str)]| {
         chrono_instructions::test_support::read_rules(host.path(), || Ok(fetch(entries))).unwrap()
     };
     assert!(load(&old).contains("old"));
     let all = load(&new);
-    assert!(all.contains("edited") && all.contains("added") && !all.contains("old"));
+    assert_eq!(
+        all,
+        "Source\n\n## first\n\n edited\r\n正文  \n\n## next\n\nadded\n"
+    );
     fs::write(&path, r#"{"mode":"all","exclude":["first"]}"#).unwrap();
-    assert!(load(&new).contains("added") && !load(&new).contains("edited"));
+    assert_eq!(load(&new), "Source\n\n## next\n\nadded\n");
     fs::write(&path, r#"{"mode":"only","include":["first"]}"#).unwrap();
-    assert!(load(&new).contains("edited") && !load(&new).contains("added"));
+    assert_eq!(load(&new), "Source\n\n## first\n\n edited\r\n正文  \n");
     fs::write(
         &path,
         r#"{"mode":"only","include":["missing","next","next"]}"#,
     )
     .unwrap();
     assert_eq!(load(&new), "Source\n\n## next\n\nadded\n");
+    assert_eq!(load(&old), "");
     assert!(
         chrono_instructions::test_support::read_rules(host.path(), || Ok(fetch(&[
             ("first", "a"),

@@ -18,6 +18,17 @@ use vstd::vpanic as panic;
 mod release_observation;
 
 verus! {
+#[cfg(verus_keep_ghost)]
+fn emitted_text_preserves_first_notice_and_both_bodies(
+    first_id: &[u8], first: &[u8], second_id: &[u8], second: &[u8], notice: &[u8],
+) {
+    let mut out = Vec::new();
+    policy::inherit::append_rule(&mut out, notice, first_id, first);
+    assert(out@ =~= notice@ + seq![10u8, 10u8, 35u8, 35u8, 32u8] + first_id@ + seq![10u8, 10u8] + first@ + seq![10u8]);
+    policy::inherit::append_rule(&mut out, notice, second_id, second);
+    assert(out@ =~= notice@ + seq![10u8, 10u8, 35u8, 35u8, 32u8] + first_id@ + seq![10u8, 10u8] + first@
+        + seq![10u8, 10u8, 35u8, 35u8, 32u8] + second_id@ + seq![10u8, 10u8] + second@ + seq![10u8]);
+}
 
 #[cfg(verus_keep_ghost)]
 fn publication_keeps_section_boundaries<'a>(first: &'a [String], second: &'a [String]) {

@@ -1,12 +1,50 @@
+#![allow(unexpected_cfgs)]
+#[cfg(not(verus_keep_ghost))]
+use verus_builtin_macros::verus;
+#[cfg(verus_keep_ghost)]
+use vstd::prelude::*;
+
+verus! {
+pub const LF: u8 = 10;
+pub const HASH: u8 = 35;
+pub const SPACE: u8 = 32;
+
+/// Append one published rule with its untouched body, writing the notice on the first row.
+pub fn append_rule(result: &mut Vec<u8>, notice: &[u8], id: &[u8], text: &[u8])
+    ensures result@ ==
+        (if old(result)@.len() == 0 { notice@ + seq![LF] } else { old(result)@ })
+        + seq![LF, HASH, HASH, SPACE] + id@ + seq![LF, LF] + text@ + seq![LF],
+{
+    broadcast use vstd::array::group_array_axioms;
+    if result.is_empty() {
+        result.extend_from_slice(notice);
+        result.push(LF);
+    }
+    result.extend_from_slice(&[LF, HASH, HASH, SPACE]);
+    result.extend_from_slice(id);
+    result.extend_from_slice(&[LF, LF]);
+    result.extend_from_slice(text);
+    result.push(LF);
+}
+}
+
+#[cfg(not(verus_keep_ghost))]
 use super::catalog::{self, Catalog, Content, Manifest};
+#[cfg(not(verus_keep_ghost))]
 use crate::rule_selection::{self, Mode, Row};
+#[cfg(not(verus_keep_ghost))]
 use serde::{Deserialize, Serialize};
+#[cfg(not(verus_keep_ghost))]
 use std::{collections::BTreeSet, fs, io, path::Path, process::Command};
 
+#[cfg(not(verus_keep_ghost))]
 const CHANNEL: &str = "https://raw.githubusercontent.com/chrono-harness/chrono-harness-instructions/published-rules/rules.json";
+#[cfg(not(verus_keep_ghost))]
 const SCHEMA: &str = "chrono-agent-rules/v1";
+#[cfg(not(verus_keep_ghost))]
 const CONFIG: &str = ".chrono-harness/rules.json";
 
+#[cfg(not(verus_keep_ghost))]
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Feed {
@@ -15,6 +53,7 @@ struct Feed {
     rules: Vec<Rule>,
 }
 
+#[cfg(not(verus_keep_ghost))]
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Rule {
@@ -22,6 +61,7 @@ struct Rule {
     text: String,
 }
 
+#[cfg(not(verus_keep_ghost))]
 #[derive(Deserialize)]
 #[serde(tag = "mode", rename_all = "lowercase", deny_unknown_fields)]
 enum Selection {
@@ -35,6 +75,7 @@ enum Selection {
     Off,
 }
 
+#[cfg(not(verus_keep_ghost))]
 impl Selection {
     fn read(root: &Path) -> Result<Self, String> {
         if !root.is_dir() {
@@ -61,6 +102,7 @@ impl Selection {
     }
 }
 
+#[cfg(not(verus_keep_ghost))]
 pub(super) fn publish() -> Result<String, String> {
     let manifest: Manifest = catalog::parse(catalog::DEFAULT_MANIFEST.as_bytes())?;
     let catalog: Catalog = catalog::parse(catalog::DEFAULT_CATALOG.as_bytes())?;
@@ -102,6 +144,7 @@ pub(super) fn publish() -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
+#[cfg(not(verus_keep_ghost))]
 pub(super) fn read(
     root: &Path,
     fetch: impl FnOnce() -> Result<Vec<u8>, String>,
@@ -109,6 +152,7 @@ pub(super) fn read(
     read_selected(Selection::read(root)?, fetch)
 }
 
+#[cfg(not(verus_keep_ghost))]
 fn read_selected(
     selection: Selection,
     fetch: impl FnOnce() -> Result<Vec<u8>, String>,
@@ -123,7 +167,7 @@ fn read_selected(
         return Err(format!("unsupported rules schema: {}", feed.schema));
     }
     let mut ids = BTreeSet::new();
-    let mut result = String::new();
+    let mut result = Vec::new();
     for rule in feed.rules {
         let previous = ids.replace(rule.id.clone());
         let listed = names.and_then(|names| names.get(&rule.id));
@@ -136,18 +180,19 @@ fn read_selected(
         ) {
             Row::Invalid => return Err(format!("empty or duplicate upstream rule: {}", rule.id)),
             Row::Omit => (),
-            Row::Publish => {
-                if result.is_empty() {
-                    result = format!("{}\n", feed.notice);
-                }
-                result.push_str(&format!("\n## {}\n\n{}\n", rule.id, rule.text));
-            }
+            Row::Publish => append_rule(
+                &mut result,
+                feed.notice.as_bytes(),
+                rule.id.as_bytes(),
+                rule.text.as_bytes(),
+            ),
         }
     }
-    Ok(result)
+    String::from_utf8(result).map_err(|error| error.to_string())
 }
 
 /// Publish a materialized guide while preserving host text and the literal root alias.
+#[cfg(not(verus_keep_ghost))]
 pub(super) fn sync(
     host: &Path,
     fetch: impl FnOnce() -> Result<Vec<u8>, String>,
@@ -173,7 +218,7 @@ pub(super) fn sync(
             return Err("upstream rules contain reserved guide delimiters".into());
         }
         let mut block = BEGIN.to_vec();
-        block.push(b'\n');
+        block.push(LF);
         block.extend_from_slice(text.as_bytes());
         block.extend_from_slice(END);
         let mut changes = vec![];
@@ -197,6 +242,7 @@ pub(super) fn sync(
     })
 }
 
+#[cfg(not(verus_keep_ghost))]
 pub(super) fn fetch() -> Result<Vec<u8>, String> {
     let output = Command::new("curl")
         .args([
