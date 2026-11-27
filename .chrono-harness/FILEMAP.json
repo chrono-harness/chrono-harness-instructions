@@ -1174,6 +1174,17 @@
       }
     },
     {
+      "path": "docs/examples/development-failures.smt2",
+      "owner": "host",
+      "surface": "product",
+      "cost": "unmeasured",
+      "edges": [],
+      "verification": {
+        "role": "data",
+        "roots": []
+      }
+    },
+    {
       "path": "docs/examples/recovery.smt2",
       "owner": "host",
       "surface": "product",
