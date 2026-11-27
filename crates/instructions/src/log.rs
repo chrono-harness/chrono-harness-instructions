@@ -1,160 +1,150 @@
-//! Optional, bounded instruction-command logs. Each tool owns its own files.
-use chrono_instructions::publication_decision::{LogWrite, event_fits, log_write};
-use file_rotate::{ContentLimit, FileRotate, compression::Compression, suffix::AppendCount};
-use serde::Deserialize;
-use serde_json::json;
-use std::{
-    ffi::OsString,
-    fs,
-    io::{self, Write},
-    path::{Component, Path, PathBuf},
-};
+//! An opted-in host publishes events using its installed chrono-diagnostics.
+#[cfg(not(verus_keep_ghost))]
+use verus_builtin_macros::verus;
+#[cfg(verus_keep_ghost)]
+use vstd::prelude::*;
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Policy {
-    schema: String,
-    level: String,
-    directory: String,
-    max_bytes: usize,
-    max_files: usize,
-    stderr: bool,
+verus! {
+/// A completed logging session returns the business code or the owner's failure code.
+pub fn session_exit(business: u8, status: Option<i32>) -> (exit: Option<u8>)
+    ensures exit == if status == Some(business as i32) { Some(business) }
+                    else if status == Some(2i32) { Some(2u8) } else { None },
+{
+    match status {
+        Some(code) if code == business as i32 => Some(business),
+        Some(2) => Some(2),
+        _ => None,
+    }
 }
 
-pub(crate) struct Log {
-    policy: Policy,
-    host: PathBuf,
-    operation: OsString,
-    directory: PathBuf,
 }
 
-fn directory_under(root: &Path, path: &Path) -> io::Result<PathBuf> {
-    let mut directory = root.to_owned();
-    for part in path.components() {
-        let Component::Normal(name) = part else {
-            return Err(io::Error::other("invalid log directory"));
-        };
-        directory.push(name);
-        match fs::create_dir(&directory) {
-            Ok(()) => (),
-            Err(e)
-                if e.kind() == io::ErrorKind::AlreadyExists
-                    && fs::symlink_metadata(&directory)?.is_dir() =>
-            {
-                ()
-            }
-            Err(e) => return Err(e),
+#[cfg(not(verus_keep_ghost))]
+pub(crate) use native::*;
+#[cfg(not(verus_keep_ghost))]
+mod native {
+    use chrono_instructions::CliOutput;
+    use std::ffi::{OsStr, OsString};
+    use std::fs;
+    use std::io::{self, BufRead, BufReader, Read, Write};
+    use std::path::Path;
+    use std::process::{Command, Stdio};
+
+    use serde_json::json;
+
+    pub(crate) enum StartError {
+        Reported,
+        Transport(io::Error),
+    }
+
+    impl From<io::Error> for StartError {
+        fn from(error: io::Error) -> Self {
+            Self::Transport(error)
         }
     }
-    Ok(directory)
-}
 
-impl Log {
-    pub(crate) fn for_args(args: &[OsString]) -> Result<Option<Self>, String> {
-        let root = args
-            .windows(2)
-            .find(|p| p[0] == "--host-root")
-            .map_or(Path::new("."), |p| Path::new(&p[1]));
-        let config = root.join(".chrono-harness/logging.json");
-        let bytes = match fs::read(&config) {
-            Ok(b) => b,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(e.to_string()),
-        };
-        let policy: Policy = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-        let dir = Path::new(&policy.directory);
-        if policy.schema != "chrono-runtime-logging/v1"
-            || !(1..=64).contains(&policy.max_files)
-            || !(1..=64 * 1024 * 1024).contains(&policy.max_bytes)
-            || !matches!(
-                policy.level.as_str(),
-                "trace" | "debug" | "info" | "warn" | "error"
-            )
-            || !dir.starts_with(".chrono-harness")
-            || !dir.components().all(|c| matches!(c, Component::Normal(_)))
+    type Completed = (CliOutput, io::Result<u8>);
+
+    pub(crate) fn host(args: &[OsString]) -> &Path {
+        args.windows(2)
+            .find(|pair| pair[0] == "--host-root")
+            .map_or(Path::new("."), |pair| Path::new(&pair[1]))
+    }
+
+    pub(crate) fn ready(reader: impl Read) -> io::Result<()> {
+        let mut line = Vec::new();
+        BufReader::new(reader)
+            .take(256)
+            .read_until(b'\n', &mut line)?;
+        if line.ends_with(b"\n")
+            && serde_json::from_slice::<serde_json::Value>(&line)? == json!({"ready": true})
         {
-            return Err("invalid log policy or bounds".into());
+            Ok(())
+        } else {
+            Err(io::Error::other("chrono-diagnostics did not report ready"))
         }
-        let host = root.canonicalize().map_err(|e| e.to_string())?;
-        let directory =
-            directory_under(&host, &dir.join("chrono-instructions")).map_err(|e| e.to_string())?;
-        Ok(Some(Self {
-            policy,
-            host,
-            operation: args.first().cloned().unwrap_or_default(),
-            directory,
-        }))
     }
 
-    pub(crate) fn event(
-        &self,
-        event: &str,
-        message: Option<&str>,
-        exit: Option<u8>,
-    ) -> io::Result<()> {
-        let failed = message.is_some() || exit.is_some_and(|code| code != 0);
-        if !failed && matches!(self.policy.level.as_str(), "warn" | "error") {
-            return Ok(());
+    pub(crate) fn complete(mut input: impl Write, message: &str, exit: u8) -> io::Result<()> {
+        if !message.is_empty() {
+            serde_json::to_writer(&mut input, &json!({"diagnostic": message.trim_end()}))?;
+            input.write_all(b"\n")?;
         }
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(io::Error::other)?;
-        let row = json!({"schema":"chrono-log/v1","producer":"chrono-instructions","event":event,
-            "level":if failed {"error"} else {"info"}, "unix_millis":now.as_millis(),
-            "context":{"pid":std::process::id(),"host_root":self.host.to_string_lossy(),"operation":self.operation.to_string_lossy()},
-            "message":message,"fields":{"exit_code":exit}});
-        let mut bytes = serde_json::to_vec(&row)?;
-        bytes.push(b'\n');
-        if !event_fits(bytes.len() as u64, self.policy.max_bytes as u64) {
-            return Err(io::Error::other("log event exceeds file size bound"));
+        serde_json::to_writer(&mut input, &json!({"exit_code": exit}))?;
+        input.write_all(b"\n")
+    }
+
+    pub(crate) fn command(args: &[OsString], pid: u32) -> io::Result<Option<Command>> {
+        let root = host(args);
+        match fs::symlink_metadata(root.join(".chrono-harness/logging.json")) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+            Ok(_) => {}
         }
-        let directory = fs::File::open(&self.directory)?;
-        directory.lock()?;
-        let path = self.directory.join("runtime.jsonl");
-        let length = match fs::symlink_metadata(&path) {
-            Ok(meta) if meta.is_file() => meta.len(),
-            Ok(_) => return Err(io::Error::other("expected regular log file")),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => 0,
-            Err(e) => return Err(e),
+        let operation = args.first().map_or(OsStr::new("help"), OsString::as_os_str);
+        let mut command = Command::new("chrono-diagnostics");
+        command
+            .arg("cli-events-v1")
+            .arg(root.canonicalize()?)
+            .arg("chrono-instructions")
+            .arg(operation.to_string_lossy().as_ref())
+            .arg(pid.to_string())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit());
+        Ok(Some(command))
+    }
+
+    pub(crate) fn communicate(
+        input: impl Write,
+        output: impl Read,
+        wait: impl FnOnce() -> io::Result<Option<i32>>,
+        work: impl FnOnce() -> CliOutput,
+    ) -> Result<Completed, StartError> {
+        if let Err(error) = ready(output) {
+            drop(input);
+            return match wait()? {
+                // The logging owner has already written its startup diagnostic to stderr.
+                Some(2) => Err(StartError::Reported),
+                status => {
+                    Err(io::Error::other(format!("chrono-diagnostics {status:?}: {error}")).into())
+                }
+            };
+        }
+        let result = work();
+        // Close stdin before joining even if the diagnostic or terminal message cannot be sent.
+        let sent = complete(input, &result.stderr, result.exit_code);
+        let status = wait();
+        let exit = sent.and_then(|()| {
+            let status = status?;
+            super::session_exit(result.exit_code, status).ok_or_else(|| {
+                io::Error::other(format!("unexpected chrono-diagnostics status {status:?}"))
+            })
+        });
+        Ok((result, exit))
+    }
+
+    pub(crate) fn run(args: &[OsString]) -> Result<Completed, StartError> {
+        let Some(mut command) = command(args, std::process::id())? else {
+            let result = chrono_instructions::dispatch(args);
+            let exit = result.exit_code;
+            return Ok((result, Ok(exit)));
         };
-        match log_write(
-            length,
-            bytes.len() as u64,
-            self.policy.max_bytes as u64,
-            self.policy.max_files,
-        ) {
-            LogWrite::TooLarge => {
-                return Err(io::Error::other("log event exceeds file size bound"));
-            }
-            LogWrite::Append => {}
-            LogWrite::Rotate { archived_files } => {
-                FileRotate::new(
-                    &path,
-                    AppendCount::new(archived_files),
-                    ContentLimit::None,
-                    Compression::None,
-                    None,
-                )
-                .rotate()?;
-            }
-        }
-        use std::os::unix::fs::OpenOptionsExt;
-        fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(path)?
-            .write_all(&bytes)?;
-        if self.policy.stderr {
-            io::stderr().lock().write_all(&bytes)?;
-        }
-        Ok(())
+        let mut child = command.spawn()?;
+        let input = child.stdin.take().expect("requested stdin pipe");
+        let output = child.stdout.take().expect("requested stdout pipe");
+        communicate(
+            input,
+            output,
+            || child.wait().map(|s| s.code()),
+            || chrono_instructions::dispatch(args),
+        )
     }
-}
 
-pub(crate) fn diagnostic(code: &str, message: &str, exit: Option<u8>) {
-    let row = json!({"schema":"chrono-log/v1","producer":"chrono-instructions","event":"runtime.logging_failed",
+    /// Emergency output when the external logging process itself cannot be used.
+    pub(crate) fn diagnostic(code: &str, message: &str, exit: Option<u8>) {
+        let row = json!({"schema":"chrono-log/v1","producer":"chrono-instructions","event":"runtime.logging_failed",
         "error":{"error":{"code":code,"message":message,"context":{"operation_exit_code":exit}}}});
-    let _ = writeln!(io::stderr().lock(), "{row}");
+        let _ = writeln!(io::stderr().lock(), "{row}");
+    }
 }

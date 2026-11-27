@@ -18,7 +18,6 @@ for manifest in "$product" "$tests"; do
 done
 export CARGO_NET_OFFLINE=true
 cargo build --locked --message-format=json-render-diagnostics --target-dir "$scratch/product" --manifest-path "$product" > "$scratch/build.jsonl"
-export CHRONO_TEST_INSTRUCTIONS="$scratch/product/debug/chrono-instructions"
 
 coverage_failure() {
   echo "E_VERUS_COVERAGE: $*" >&2
@@ -26,24 +25,16 @@ coverage_failure() {
 }
 
 # Cargo exits zero when a registered consumer has been removed or ignored.
-consumer=atomic::late_extra_output_failure_rolls_back_nested_directories_and_prior_outputs
 cargo test --color never --locked --target-dir "$scratch/tests" --manifest-path "$tests" -- --format pretty | tee "$scratch/tests.log"
-grep -Fxq "test $consumer ... ok" "$scratch/tests.log" ||
-  coverage_failure "the required transaction rollback consumer did not run successfully"
-grep -Fxq "test raw_event_reader_checks_every_captured_identity ... ok" "$scratch/tests.log" ||
-  coverage_failure "the GitHub identity consumer did not run successfully"
-
-grep -Fxq "test live_rule_selection_follows_upstream_and_preserves_local_work ... ok" "$scratch/tests.log" &&
-  grep -Fxq "test root_guides_follow_published_selection_without_losing_host_text ... ok" "$scratch/tests.log" ||
-  coverage_failure "the inherited rule consumers did not exercise selection and guide sync"
-
-grep -Fxq "test registered_guide_and_catalog_failures_preserve_the_entire_host ... ok" "$scratch/tests.log" &&
-  grep -Fxq "test catalog_admission_preserves_unique_names_and_first_errors ... ok" "$scratch/tests.log" ||
-  coverage_failure "the catalog admission and real guide consumer did not run successfully"
-
-grep -Fxq "test whole_log_events_roll_only_after_the_last_available_byte ... ok" "$scratch/tests.log" &&
-  grep -Fxq "test opted_in_instruction_logs_rotate_whole_events_inside_their_own_directory ... ok" "$scratch/tests.log" ||
-  coverage_failure "the log write proof expectations and CLI rollover did not both pass"
+cargo run --quiet --locked --manifest-path "$product" --target-dir "$scratch/product" --example required_consumers -- "$scratch/tests.log" \
+  atomic::late_extra_output_failure_rolls_back_nested_directories_and_prior_outputs \
+  raw_event_reader_checks_every_captured_identity \
+  live_rule_selection_follows_upstream_and_preserves_local_work \
+  root_guides_follow_published_selection_without_losing_host_text \
+  registered_guide_and_catalog_failures_preserve_the_entire_host \
+  catalog_admission_preserves_unique_names_and_first_errors \
+  cli_runtime_uses_the_selected_host_and_public_diagnostics_command \
+  public_log_session_preserves_command_streams_and_joins_every_started_process
 
 # Read the exact library selected by Cargo in the build of the tested executable.
 metadata=$(jq -ers --arg manifest "$(pwd -P)/$product" '

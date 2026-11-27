@@ -10,6 +10,16 @@ use verus_builtin_macros::verus;
 #[cfg(verus_keep_ghost)]
 use vstd::prelude::*;
 
+#[cfg(verus_keep_ghost)]
+#[path = "main.rs"]
+pub mod cli_entry;
+#[cfg(verus_keep_ghost)]
+#[path = "../examples/required_consumers.rs"]
+pub mod required_consumers;
+#[cfg(verus_keep_ghost)]
+#[path = "log.rs"]
+pub mod runtime_log;
+
 // The test build observes the actual invocation on the current thread. The
 // released tool does not install an observer or retain any state for this.
 #[cfg(all(feature = "test-support", not(verus_keep_ghost)))]
@@ -44,35 +54,6 @@ pub fn finish_cli<E>(streams_written: bool, log_error: Option<E>, business: u8)
     match log_error {
         Some(error) => (2, Some(error)),
         None => (business, None),
-    }
-}
-
-pub fn event_fits(bytes: u64, limit: u64) -> (fits: bool)
-    ensures fits == (bytes <= limit),
-{
-    bytes <= limit
-}
-
-/// Append the admitted event or rotate under the held log-directory lock.
-pub enum LogWrite {
-    TooLarge,
-    Append,
-    Rotate { archived_files: usize },
-}
-
-pub fn log_write(length: u64, bytes: u64, limit: u64, max_files: usize) -> (action: LogWrite)
-    ensures match action {
-        LogWrite::TooLarge => bytes > limit || max_files == 0,
-        LogWrite::Append => bytes <= limit && max_files > 0 && length + bytes <= limit,
-        LogWrite::Rotate { archived_files } => bytes <= limit && max_files > 0
-            && length + bytes > limit && archived_files + 1 == max_files,
-    },
-{
-    if bytes > limit || max_files == 0 { return LogWrite::TooLarge; }
-    if length > limit - bytes {
-        LogWrite::Rotate { archived_files: max_files - 1 }
-    } else {
-        LogWrite::Append
     }
 }
 

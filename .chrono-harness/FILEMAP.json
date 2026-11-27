@@ -75,7 +75,16 @@
           "kind": "test-execution",
           "to": "test:instructions-tests"
         }
-      ]
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions-tests/tests/publication_decision.rs",
+            "operation": "verify.instructions-publication-tests"
+          }
+        ]
+      }
     },
     {
       "path": ".chrono-harness/ci/roadmap.rs",
@@ -805,6 +814,31 @@
       }
     },
     {
+      "path": "crates/instructions/examples/required_consumers.rs",
+      "owner": "instructions",
+      "surface": "product",
+      "cost": "unmeasured",
+      "edges": [
+        {
+          "kind": "test-execution",
+          "to": "test:instructions-tests"
+        }
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions/src/publication_decision.rs",
+            "operation": "verify.instructions-publication"
+          },
+          {
+            "path": "crates/instructions-tests/tests/publication_decision.rs",
+            "operation": "verify.instructions-publication-tests"
+          }
+        ]
+      }
+    },
+    {
       "path": "crates/instructions/src/catalog.rs",
       "owner": "instructions",
       "surface": "product",
@@ -951,7 +985,20 @@
           "kind": "test-execution",
           "to": "test:instructions-tests"
         }
-      ]
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions/src/publication_decision.rs",
+            "operation": "verify.instructions-publication"
+          },
+          {
+            "path": "crates/instructions-tests/tests/publication_decision.rs",
+            "operation": "verify.instructions-publication-tests"
+          }
+        ]
+      }
     },
     {
       "path": "crates/instructions/src/main.rs",
@@ -963,7 +1010,20 @@
           "kind": "test-execution",
           "to": "test:instructions-tests"
         }
-      ]
+      ],
+      "verification": {
+        "role": "program",
+        "roots": [
+          {
+            "path": "crates/instructions/src/publication_decision.rs",
+            "operation": "verify.instructions-publication"
+          },
+          {
+            "path": "crates/instructions-tests/tests/publication_decision.rs",
+            "operation": "verify.instructions-publication-tests"
+          }
+        ]
+      }
     },
     {
       "path": "crates/instructions/src/publication_decision.rs",

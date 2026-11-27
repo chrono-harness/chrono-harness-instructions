@@ -55,6 +55,26 @@ fn equal_and_absent_digests(bytes: &[u8; 32]) {
     assert(!missing_left);
 }
 
+// The deployed shell passes the required names to the same checker exercised below.
+pub fn native_recipe() -> &'static str {
+    include_str!("../../../.chrono-harness/ci/native.sh")
+}
+
+#[cfg(verus_keep_ghost)]
+fn exact_native_result(lines: &[&[u8]], expected: &[u8], at: usize)
+    requires at < lines.len(), lines@[at as int]@ == expected@,
+{
+    let present = policy::required_consumers::has_line(lines, expected);
+    assert(present);
+}
+
+#[cfg(verus_keep_ghost)]
+fn absent_native_result(lines: &[&[u8]], expected: &[u8])
+    requires forall|j: int| 0 <= j < lines.len() ==> lines@[j]@ != expected@,
+{
+    let present = policy::required_consumers::has_line(lines, expected);
+    assert(!present);
+}
 fn expect_true(actual: bool)
     requires actual,
 {
@@ -73,17 +93,28 @@ fn written_output_preserves_the_business_exit_or_original_logging_error(business
     assert(failed == 2 && original == Some(id));
 }
 
-#[cfg_attr(not(verus_keep_ghost), test)]
-fn whole_log_events_roll_only_after_the_last_available_byte() {
-    use policy::{event_fits, log_write, LogWrite};
-    expect_true(event_fits(128, 128));
-    expect_true(!event_fits(129, 128));
-    expect_true(matches!(log_write(123, 5, 128, 2), LogWrite::Append));
-    expect_true(matches!(log_write(124, 5, 128, 2), LogWrite::Rotate { archived_files: 1 }));
-    expect_true(matches!(log_write(128, 1, 128, 1), LogWrite::Rotate { archived_files: 0 }));
-    expect_true(matches!(log_write(0, 129, 128, 2), LogWrite::TooLarge));
-    expect_true(matches!(log_write(u64::MAX, 1, 128, 2), LogWrite::Rotate { archived_files: 1 }));
-    expect_true(matches!(log_write(0, 1, 128, 0), LogWrite::TooLarge));
+#[cfg(verus_keep_ghost)]
+fn completed_diagnostics_session_preserves_business_or_reports_logging_failure(business: u8, other: i32) {
+    let ok = policy::runtime_log::session_exit(business, Some(business as i32));
+    assert(ok == Some(business));
+    let failed = policy::runtime_log::session_exit(business, Some(2));
+    assert(failed == Some(2u8));
+    let signal = policy::runtime_log::session_exit(business, None);
+    assert(signal.is_none());
+    let unexpected = policy::runtime_log::session_exit(business, Some(other));
+    if other != business as i32 && other != 2 { assert(unexpected.is_none()); }
+}
+
+#[cfg(verus_keep_ghost)]
+fn command_stream_failure_has_precedence_and_success_retains_the_real_outcome(business: u8, status: u8, error: u64) {
+    let transport = policy::cli_entry::stream_result(true, Err(error), business);
+    assert(transport == (2u8, Some(error)));
+    let lost = policy::cli_entry::stream_result(false, Err(error), business);
+    assert(lost == (1u8, None::<u64>));
+    let exact = policy::cli_entry::stream_result::<u64>(true, Ok(status), business);
+    assert(exact == (status,None::<u64>));
+    let write = policy::cli_entry::stream_result::<u64>(false, Ok(status), business);
+    assert(write == (1u8,None::<u64>));
 }
 
 #[cfg_attr(not(verus_keep_ghost), test)]
@@ -184,5 +215,55 @@ fn checked_rule_publication_does_not_push_stale_unchanged_or_failed_data() {
             }
         }
         assert_eq!(calls, expected);
+    }
+}
+
+#[cfg(not(verus_keep_ghost))]
+#[allow(dead_code)]
+#[path = "../../instructions/examples/required_consumers.rs"]
+mod required_consumers;
+
+#[cfg(not(verus_keep_ghost))]
+#[test]
+fn native_recipe_requires_actual_success_for_each_registered_consumer() {
+    let script = native_recipe();
+    let call = script
+        .lines()
+        .position(|line| {
+            line.starts_with("cargo run ") && line.contains("--example required_consumers -- ")
+        })
+        .unwrap();
+    let lines: Vec<_> = script.lines().collect();
+    assert!(lines[call - 1].starts_with("cargo test "));
+    assert!(lines[call - 1].ends_with("tee \"$scratch/tests.log\""));
+    assert!(lines[call].ends_with("\"$scratch/tests.log\" \\"));
+    let names: Vec<_> = lines[call + 1..]
+        .iter()
+        .take_while(|line| line.starts_with("  "))
+        .map(|line| line.trim().trim_end_matches(" \\"))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "atomic::late_extra_output_failure_rolls_back_nested_directories_and_prior_outputs",
+            "raw_event_reader_checks_every_captured_identity",
+            "live_rule_selection_follows_upstream_and_preserves_local_work",
+            "root_guides_follow_published_selection_without_losing_host_text",
+            "registered_guide_and_catalog_failures_preserve_the_entire_host",
+            "catalog_admission_preserves_unique_names_and_first_errors",
+            "cli_runtime_uses_the_selected_host_and_public_diagnostics_command",
+            "public_log_session_preserves_command_streams_and_joins_every_started_process",
+        ]
+    );
+    let receipts: Vec<_> = names
+        .iter()
+        .map(|name| format!("test {name} ... ok"))
+        .collect();
+    for (i, row) in receipts.iter().enumerate() {
+        let lines: Vec<_> = receipts.iter().map(|s| s.as_bytes()).collect();
+        assert!(required_consumers::has_line(&lines, row.as_bytes()));
+        let mut missing = lines;
+        missing[i] = b"test other ... ok";
+        assert!(!required_consumers::has_line(&missing, row.as_bytes()));
     }
 }
