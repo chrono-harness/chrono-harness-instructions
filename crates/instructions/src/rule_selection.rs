@@ -16,6 +16,10 @@ use vstd::prelude::*;
 #[path = "catalog.rs"]
 pub mod catalog;
 
+#[cfg(verus_keep_ghost)]
+#[path = "lib.rs"]
+pub mod host_paths;
+
 #[path = "catalog_admission.rs"]
 pub mod catalog_admission;
 

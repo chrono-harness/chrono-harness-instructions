@@ -18,6 +18,42 @@ use vstd::vpanic as panic;
 mod release_observation;
 
 verus! {
+
+#[cfg(verus_keep_ghost)]
+fn registered_path_errors_prioritize_spelling_then_reserved_then_source(path: &[u8], source: bool) {
+    use policy::host_paths::{registered_path,PathUse};
+    let invalid = registered_path(path, false, source);
+    assert(invalid is NonCanonical);
+    let output = registered_path(path, true, false);
+    let input = registered_path(path, true, true);
+    assert((output is Reserved) ==> (input is Reserved));
+    assert((input is Allowed) ==> (output is Allowed));
+    assert((input is ExternalSource) ==> (output is Allowed));
+}
+
+#[cfg(verus_keep_ghost)]
+fn component_boundaries_and_source_roots(prefix: &[u8], path: &[u8], boundary: usize)
+    requires
+        boundary == prefix.len(), boundary < path.len(),
+        path@.subrange(0, boundary as int) == prefix@,
+{
+    use policy::host_paths::{directory_relation, canonical_component};
+    let empty: [u8; 0] = [];
+    let dot: [u8; 1] = [46];
+    let double: [u8; 2] = [46,46];
+    let triple: [u8; 3] = [46,46,46];
+    let unnamed = canonical_component(&empty);
+    let current = canonical_component(&dot);
+    let parent = canonical_component(&double);
+    let named = canonical_component(&triple);
+    assert(!unnamed && !current && !parent && named);
+    let (exact, related) = directory_relation(path, prefix);
+    assert(!exact);
+    assert(related == (path@[boundary as int] == 47u8));
+    let (same, child) = directory_relation(prefix, prefix);
+    assert(same && !child);
+}
+
 #[cfg(verus_keep_ghost)]
 fn emitted_text_preserves_first_notice_and_both_bodies(
     first_id: &[u8], first: &[u8], second_id: &[u8], second: &[u8], notice: &[u8],
