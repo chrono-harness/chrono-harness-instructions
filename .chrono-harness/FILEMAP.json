@@ -1166,6 +1166,17 @@
       }
     },
     {
+      "path": "docs/examples/recovery.smt2",
+      "owner": "host",
+      "surface": "product",
+      "cost": "unmeasured",
+      "edges": [],
+      "verification": {
+        "role": "data",
+        "roots": []
+      }
+    },
+    {
       "path": "docs/licenses/methodology-attribution.md",
       "owner": "host",
       "surface": "product",
@@ -1178,6 +1189,17 @@
     },
     {
       "path": "docs/licenses/trureturing-Apache-2.0.txt",
+      "owner": "host",
+      "surface": "product",
+      "cost": "unmeasured",
+      "edges": [],
+      "verification": {
+        "role": "data",
+        "roots": []
+      }
+    },
+    {
+      "path": "docs/recovery-model.md",
       "owner": "host",
       "surface": "product",
       "cost": "unmeasured",
