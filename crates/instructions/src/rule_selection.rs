@@ -2,6 +2,9 @@
 #[cfg(not(verus_keep_ghost))]
 use crate::verified_bytes;
 #[cfg(verus_keep_ghost)]
+#[path = "inherit.rs"]
+pub mod inherit;
+#[cfg(verus_keep_ghost)]
 #[path = "verified_bytes.rs"]
 mod verified_bytes;
 #[cfg(not(verus_keep_ghost))]
