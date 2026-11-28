@@ -41,13 +41,7 @@ cargo run --quiet --locked --manifest-path "$product" --target-dir "$scratch/pro
   public_log_session_preserves_command_streams_and_joins_every_started_process
 
 # Read the exact library selected by Cargo in the build of the tested executable.
-metadata=$(jq -ers --arg manifest "$(pwd -P)/$product" '
-  [.[] | select(.reason == "compiler-artifact" and .manifest_path == $manifest
-                 and .target.kind == ["lib"]) | .filenames[] | select(endswith(".rmeta"))]
-  | if length == 1 then .[0] else error("expected the product library") end
-' "$scratch/build.jsonl") || coverage_failure "native library was not identified"
-filename=${metadata##*/}
-stem=${filename#lib}
-stem=${metadata%/*}/${stem%.rmeta}
+stem=$(chrono-host-bootstrap select-native-cargo-library "$(pwd -P)/$product" "$scratch/build.jsonl") ||
+  coverage_failure "native library was not identified"
 chrono-host-bootstrap check-compiler-sources native "$stem" src/publication_decision.rs src/transaction.rs src/event_identity.rs src/github_event.rs src/rule_selection.rs src/verified_bytes.rs src/inherit.rs src/catalog_admission.rs src/catalog.rs ||
   coverage_failure "native library differs from required sources"
