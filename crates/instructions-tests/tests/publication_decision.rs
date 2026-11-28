@@ -262,6 +262,8 @@ fn native_recipe_requires_actual_success_for_each_registered_consumer() {
         names,
         [
             "atomic::late_extra_output_failure_rolls_back_nested_directories_and_prior_outputs",
+            "guide_and_feed_share_the_exact_resolved_projection",
+            "a_deep_catalog_uses_the_same_order_on_a_small_thread_stack",
             "atomic::graph_integrity_includes_unselected_atoms_and_diagnoses_chains",
             "atomic::layout_rejects_invalid_placement_locale_and_depth_before_any_writes",
             "atomic::invalid_skill_metadata_and_format_bindings_fail_without_writes",

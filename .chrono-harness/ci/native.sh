@@ -28,8 +28,8 @@ coverage_failure() {
 cargo test --color never --locked --target-dir "$scratch/tests" --manifest-path "$tests" -- --format pretty | tee "$scratch/tests.log"
 cargo run --quiet --locked --manifest-path "$product" --target-dir "$scratch/product" --example required_consumers -- "$scratch/tests.log" \
   atomic::late_extra_output_failure_rolls_back_nested_directories_and_prior_outputs \
-  atomic::guide_and_feed_share_the_exact_resolved_projection \
-  atomic::a_deep_catalog_uses_the_same_order_on_a_small_thread_stack \
+  guide_and_feed_share_the_exact_resolved_projection \
+  a_deep_catalog_uses_the_same_order_on_a_small_thread_stack \
   atomic::graph_integrity_includes_unselected_atoms_and_diagnoses_chains \
   atomic::layout_rejects_invalid_placement_locale_and_depth_before_any_writes \
   atomic::invalid_skill_metadata_and_format_bindings_fail_without_writes \
