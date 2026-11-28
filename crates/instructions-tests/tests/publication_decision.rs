@@ -19,8 +19,8 @@ mod publish_rules;
 #[cfg(verus_keep_ghost)]
 use policy::publish_rules;
 
-#[path = "../../../.chrono-harness/ci/roadmap.rs"]
-mod roadmap;
+#[path = "../../../.chrono-harness/ci/host_adapters.rs"]
+mod host_adapters;
 
 verus! {
 #[cfg(verus_keep_ghost)]
