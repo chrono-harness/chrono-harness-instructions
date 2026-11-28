@@ -24,6 +24,22 @@ mod roadmap;
 
 verus! {
 #[cfg(verus_keep_ghost)]
+fn commit_observation_matches_only_the_complete_original_identity(
+    identity: &[u8], other: &[u8], digest: &[u8; 32], changed: &[u8; 32],
+) {
+    use policy::transaction::same_observation;
+    let expected = (identity, 0o644u32, Some(digest));
+    let exact = same_observation(expected, expected);
+    let mode_drift = same_observation((identity, 0o600, Some(digest)), expected);
+    let no_bytes = same_observation((identity, 0o644, None), expected);
+    let identity_check = same_observation((other, 0o644, Some(digest)), expected);
+    let contents_check = same_observation((identity, 0o644, Some(changed)), expected);
+    assert(exact && !mode_drift && !no_bytes);
+    assert(identity_check == (identity@ == other@));
+    assert(contents_check == (digest@ == changed@));
+}
+
+#[cfg(verus_keep_ghost)]
 fn hosted_publication_follows_observed_refs_and_diff(current: bool, existing: bool, code: i32) {
     let base = publish_rules::publication_base(current, existing);
     if !current { assert(base is Stale); }

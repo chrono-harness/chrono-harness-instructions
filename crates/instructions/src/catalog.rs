@@ -6,6 +6,133 @@ use vstd::prelude::*;
 use vstd::utf8::encode_utf8;
 
 verus! {
+pub(crate) fn catalog_schema(version: u32) -> (accepted: bool)
+    ensures accepted == (version == 1),
+{
+    version == 1
+}
+
+pub(crate) fn manifest_schema(
+    version: u32, producer: &[u8], renderer: &[u8], expected_renderer: &[u8],
+) -> (accepted: bool)
+    ensures accepted == (version == 2
+        && producer@ == encode_utf8("chrono-instructions"@)
+        && renderer@ == expected_renderer@),
+{
+    version == 2 && super::verified_bytes::equal(producer, "chrono-instructions".as_bytes())
+        && super::verified_bytes::equal(renderer, expected_renderer)
+}
+
+pub(crate) open spec fn skill_character(byte: u8) -> bool {
+    97 <= byte <= 122 || 48 <= byte <= 57 || byte == 45
+}
+
+pub(crate) open spec fn skill_position(name: Seq<u8>, i: int) -> bool {
+    skill_character(name[i]) && (i == 0 || name[i - 1] != 45 || name[i] != 45)
+}
+
+pub(crate) fn skill_name(name: &[u8]) -> (accepted: bool)
+    ensures accepted == (0 < name@.len() <= 63
+        && name@[0] != 45 && name@[name@.len() - 1] != 45
+        && forall|i: int| 0 <= i < name@.len() ==> #[trigger] skill_position(name@, i)),
+{
+    // ASCII ranges for a-z, 0-9, and hyphen.
+    if name.is_empty() || name.len() > 63 || name[0] == 45 || name[name.len() - 1] == 45 {
+        return false;
+    }
+    let mut i = 0;
+    while i < name.len()
+        invariant i <= name@.len(), 0 < name@.len() <= 63,
+            name@[0] != 45, name@[name@.len() - 1] != 45,
+            forall|j: int| 0 <= j < i ==> #[trigger] skill_position(name@, j),
+        decreases name.len() - i,
+    {
+        let byte = name[i];
+        if !(97 <= byte && byte <= 122 || 48 <= byte && byte <= 57 || byte == 45)
+            || (i > 0 && name[i - 1] == 45 && byte == 45)
+        {
+            assert(!skill_position(name@, i as int));
+            return false;
+        }
+        assert(skill_position(name@, i as int));
+        i += 1;
+    }
+    true
+}
+
+pub(crate) fn skill_description(single_line: bool, length: usize, has_angle: bool) -> (accepted: bool)
+    ensures accepted == (single_line && length <= 1024 && !has_angle),
+{
+    single_line && length <= 1024 && !has_angle
+}
+
+pub(crate) fn section_depth(previous: u8, depth: u8) -> (accepted: bool)
+    ensures accepted == (1 <= depth <= 6 && depth as int <= previous as int + 1),
+{
+    1 <= depth && depth <= 6 && (depth as u16) <= previous as u16 + 1
+}
+
+pub(crate) fn rendered_depth(depth: u8, has_title: bool) -> (effective: Option<u8>)
+    ensures match effective {
+        Some(heading) => heading as int == depth as int + (if has_title { 1int } else { 0int })
+            && heading <= 6,
+        None => depth as int + (if has_title { 1int } else { 0int }) > 6,
+    },
+{
+    let effective = depth as u16 + if has_title { 1u16 } else { 0u16 };
+    if effective <= 6 { Some(effective as u8) } else { None }
+}
+
+pub(crate) fn active_dependency(stack: &[String], id: &str) -> (active: bool)
+    ensures active == (exists|i: int| 0 <= i < stack@.len()
+        && encode_utf8(stack@[i]@) == encode_utf8(id@)),
+{
+    let mut i = 0;
+    while i < stack.len()
+        invariant i <= stack@.len(),
+            forall|j: int| 0 <= j < i ==> encode_utf8(stack@[j]@) != encode_utf8(id@),
+        decreases stack.len() - i,
+    {
+        if super::verified_bytes::equal(stack[i].as_str().as_bytes(), id.as_bytes()) {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+pub(crate) enum Dependency<T> {
+    Cycle,
+    Visited,
+    Missing,
+    Open(T),
+}
+
+pub(crate) fn dependency<T>(stack: &[String], id: &str, visited: bool, entry: Option<T>)
+    -> (step: Dependency<T>)
+    ensures match step {
+        Dependency::Cycle => exists|i: int| 0 <= i < stack@.len()
+            && encode_utf8(stack@[i]@) == encode_utf8(id@),
+        Dependency::Visited => visited && forall|i: int| 0 <= i < stack@.len()
+            ==> encode_utf8(stack@[i]@) != encode_utf8(id@),
+        Dependency::Missing => !visited && entry.is_none() && forall|i: int| 0 <= i < stack@.len()
+            ==> encode_utf8(stack@[i]@) != encode_utf8(id@),
+        Dependency::Open(atom) => !visited && entry == Some(atom) && forall|i: int| 0 <= i < stack@.len()
+            ==> encode_utf8(stack@[i]@) != encode_utf8(id@),
+    },
+{
+    if active_dependency(stack, id) {
+        return Dependency::Cycle;
+    }
+    if visited {
+        return Dependency::Visited;
+    }
+    match entry {
+        Some(atom) => Dependency::Open(atom),
+        None => Dependency::Missing,
+    }
+}
+
 /// Resolve a requested layout before considering dependency order.
 pub(crate) fn layout_for<'a>(id: Option<&'a String>, layouts: &[Layout])
     -> (choice: Result<Option<usize>, &'a String>)
@@ -279,21 +406,14 @@ pub(super) fn content_valid(s: &str) -> Result<(), String> {
 impl Skill {
     fn validate(&self) -> Result<(), String> {
         let name = &self.name;
-        if name.is_empty()
-            || name.len() > 63
-            || name.starts_with('-')
-            || name.ends_with('-')
-            || name.contains("--")
-            || !name
-                .bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-        {
+        if !skill_name(name.as_bytes()) {
             return Err(format!("invalid skill name {name:?}"));
         }
-        if !single_line(&self.description)
-            || self.description.chars().count() > 1024
-            || self.description.contains(['<', '>'])
-        {
+        if !skill_description(
+            single_line(&self.description),
+            self.description.chars().count(),
+            self.description.contains(['<', '>']),
+        ) {
             return Err("skill description must be nonempty, single-line, <=1024 characters, without controls or angle brackets".into());
         }
         Ok(())
@@ -310,10 +430,12 @@ impl Skill {
 #[cfg(not(verus_keep_ghost))]
 impl Manifest {
     pub fn validate(&self) -> Result<(), String> {
-        if self.schema_version != 2
-            || self.producer != "chrono-instructions"
-            || self.render != RENDER
-        {
+        if !manifest_schema(
+            self.schema_version,
+            self.producer.as_bytes(),
+            self.render.as_bytes(),
+            RENDER.as_bytes(),
+        ) {
             return Err("unsupported registration: expected schema 2 / chrono-instructions / atomic-rules/relative-alias/v3".into());
         }
         let mut ids = BTreeSet::new();
@@ -389,7 +511,7 @@ impl Manifest {
 #[cfg(not(verus_keep_ghost))]
 impl Catalog {
     pub fn validate(&self) -> Result<(), String> {
-        if self.schema_version != 1 {
+        if !catalog_schema(self.schema_version) {
             return Err("unsupported catalog schema_version (expected 1)".into());
         }
         let mut locales = BTreeSet::new();
@@ -451,7 +573,7 @@ impl Catalog {
             let mut placed = BTreeSet::new();
             for (index, section) in layout.sections.iter().enumerate() {
                 let at = format!("layout {} section {}", layout.id, index + 1);
-                if !(1..=6).contains(&section.depth) || section.depth > previous_depth + 1 {
+                if !section_depth(previous_depth, section.depth) {
                     return Err(format!(
                         "{at}: depth must be 1..6, start at 1 and increase by at most 1"
                     ));
@@ -459,12 +581,16 @@ impl Catalog {
                 previous_depth = section.depth;
                 let mut titles = BTreeSet::new();
                 for title in &section.titles {
-                    if !locales.contains(&title.locale) {
-                        return Err(format!("{at}: unregistered title locale {}", title.locale));
-                    }
-                    if !titles.insert(&title.locale) {
-                        return Err(format!("{at}: duplicate title locale {}", title.locale));
-                    }
+                    catalog_admission::variant(&locales, &mut titles, &title.locale).map_err(
+                        |error| match error {
+                            VariantError::Unregistered => {
+                                format!("{at}: unregistered title locale {}", title.locale)
+                            }
+                            VariantError::Duplicate => {
+                                format!("{at}: duplicate title locale {}", title.locale)
+                            }
+                        },
+                    )?;
                     if !single_line(&title.text) {
                         return Err(format!("{at}: title must be nonempty single-line text"));
                     }
@@ -563,20 +689,19 @@ impl Catalog {
         }
         if let Some(id) = &output.layout {
             let at = format!("output {} layout {id}", output.id);
-            let layout = self
-                .layouts
-                .iter()
-                .find(|l| l.id == *id)
+            let layout = layout_for(Some(id), &self.layouts)
+                .ok()
+                .flatten()
+                .map(|index| &self.layouts[index])
                 .ok_or_else(|| format!("output {}: unknown layout {id}", output.id))?;
             let mut arranged = Vec::new();
             for (index, section) in layout.sections.iter().enumerate() {
-                let depth = section.depth + u8::from(output.title.is_some());
-                if depth > 6 {
+                let Some(depth) = rendered_depth(section.depth, output.title.is_some()) else {
                     return Err(format!(
                         "{at} section {}: depth exceeds 6 with output title",
                         index + 1
                     ));
-                }
+                };
                 let title = section
                     .titles
                     .iter()
@@ -615,20 +740,21 @@ fn visit<'a>(
     stack: &mut Vec<String>,
     order: &mut Vec<&'a Atom>,
 ) -> Result<(), String> {
-    if stack.iter().any(|s| s == id) {
-        let mut chain = stack.clone();
-        chain.push(id.into());
-        return Err(format!("dependency cycle: {}", chain.join(" -> ")));
-    }
-    if visited.contains(id) {
-        return Ok(());
-    }
-    let atom = atoms.get(id).ok_or_else(|| {
-        format!(
-            "unresolved atom {id}; dependency chain: {}",
-            stack.join(" -> ")
-        )
-    })?;
+    let atom = match dependency(stack, id, visited.contains(id), atoms.get(id).copied()) {
+        Dependency::Cycle => {
+            let mut chain = stack.clone();
+            chain.push(id.into());
+            return Err(format!("dependency cycle: {}", chain.join(" -> ")));
+        }
+        Dependency::Visited => return Ok(()),
+        Dependency::Missing => {
+            return Err(format!(
+                "unresolved atom {id}; dependency chain: {}",
+                stack.join(" -> ")
+            ));
+        }
+        Dependency::Open(atom) => atom,
+    };
     stack.push(id.into());
     for required in &atom.requires {
         visit(required, atoms, visited, stack, order)?;

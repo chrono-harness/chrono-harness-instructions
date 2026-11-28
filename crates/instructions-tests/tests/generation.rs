@@ -6,8 +6,8 @@ use vstd::prelude::*;
 
 verus! {
 pub fn release_version_line() -> (value: &'static str)
-    ensures value@ == "chrono-instructions 0.1.7\n"@,
-{ "chrono-instructions 0.1.7\n" }
+    ensures value@ == "chrono-instructions 0.1.10\n"@,
+{ "chrono-instructions 0.1.10\n" }
 }
 
 #[cfg(not(verus_keep_ghost))]
@@ -830,6 +830,44 @@ fn late_publication_failure_rolls_back_new_material_and_existing_output_bytes() 
         assert!(failure.contains("injected publication failure"));
         assert!(failure.contains("unrestored=[]"));
         assert_eq!(host.snapshot(), before, "{failure}");
+    }
+}
+
+#[test]
+fn input_drift_before_commit_rolls_back_without_touching_the_external_edit() {
+    thread_local! {
+        static EDIT: std::cell::RefCell<Option<(PathBuf, &'static str)>> = const { std::cell::RefCell::new(None) };
+    }
+    fn replace_input(point: &str) {
+        EDIT.with_borrow_mut(|edit| {
+            if let Some((path, when)) = edit.as_ref() {
+                if point == *when {
+                    fs::write(path, "independent edit").unwrap();
+                    edit.take();
+                }
+            }
+        });
+    }
+
+    for checkpoint in ["prepared", "published-0"] {
+        let host = Host::new();
+        host.write("CLAUDE.md", "original host");
+        let before = host.snapshot();
+        EDIT.with_borrow_mut(|edit| *edit = Some((host.method.clone(), checkpoint)));
+        let error = test_support::init_with_checkpoint(
+            &host.root,
+            &host.method,
+            &host.context,
+            replace_input,
+        )
+        .unwrap_err();
+        assert!(
+            error.contains("external input changed after preparation"),
+            "{error}"
+        );
+        assert!(error.contains("unrestored=[]"), "{error}");
+        assert_eq!(host.snapshot(), before, "{error}");
+        assert_eq!(fs::read(&host.method).unwrap(), b"independent edit");
     }
 }
 

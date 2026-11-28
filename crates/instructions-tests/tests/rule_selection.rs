@@ -20,6 +20,65 @@ mod release_observation;
 verus! {
 
 #[cfg(verus_keep_ghost)]
+fn catalog_admission_requires_the_declared_schema_and_skill_limits(
+    producer: &[u8], renderer: &[u8], other: &[u8], name: &[u8],
+)
+    requires name@.len() > 63,
+{
+    use policy::catalog::{catalog_schema, manifest_schema, skill_description, skill_name, skill_position};
+    let valid = catalog_schema(1);
+    let unsupported = catalog_schema(2);
+    let wrong_schema = manifest_schema(1, producer, renderer, renderer);
+    let checked_renderer = manifest_schema(2, "chrono-instructions".as_bytes(), renderer, other);
+    let too_long = skill_name(name);
+    let short = [97u8];
+    let adjacent = [97u8, 45u8, 45u8, 98u8];
+    let valid_name = skill_name(&short);
+    let doubled = skill_name(&adjacent);
+    let valid_description = skill_description(true, 1024, false);
+    let long_description = skill_description(true, 1025, false);
+    let tagged_description = skill_description(true, 1, true);
+    assert(valid && !unsupported && !wrong_schema);
+    assert(checked_renderer == (renderer@ == other@));
+    assert(skill_position(short@, 0));
+    assert(!skill_position(adjacent@, 2));
+    assert(!too_long && valid_name && !doubled);
+    assert(valid_description && !long_description && !tagged_description);
+}
+
+#[cfg(verus_keep_ghost)]
+fn dependency_cycle_wins_before_seen_and_missing(stack: &[String], id: &str, index: usize)
+    requires index < stack@.len(), encode_utf8(stack@[index as int]@) == encode_utf8(id@),
+{
+    use policy::catalog::{Dependency, dependency};
+    let cycle = dependency::<u8>(stack, id, true, None);
+    assert(cycle is Cycle);
+    let no_stack: [String; 0] = [];
+    let seen = dependency::<u8>(&no_stack, id, true, None);
+    let missing = dependency::<u8>(&no_stack, id, false, None);
+    let open = dependency(&no_stack, id, false, Some(3u8));
+    assert(seen is Visited);
+    assert(missing is Missing);
+    match open {
+        Dependency::Open(atom) => { assert(atom == 3); },
+        _ => { assert(false); },
+    }
+}
+
+#[cfg(verus_keep_ghost)]
+fn heading_depth_reserves_one_level_for_an_output_title() {
+    use policy::catalog::{rendered_depth, section_depth};
+    let first = section_depth(0, 1);
+    let skipped = section_depth(0, 2);
+    let sixth = section_depth(5, 6);
+    let seventh = section_depth(6, 7);
+    let untitled = rendered_depth(6, false);
+    let titled = rendered_depth(6, true);
+    assert(first && !skipped && sixth && !seventh);
+    assert(untitled == Some(6u8) && titled.is_none());
+}
+
+#[cfg(verus_keep_ghost)]
 fn registered_path_errors_prioritize_spelling_then_reserved_then_source(path: &[u8], source: bool) {
     use policy::host_paths::{registered_path,PathUse};
     let invalid = registered_path(path, false, source);
