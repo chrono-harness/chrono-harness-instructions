@@ -29,7 +29,7 @@ pub fn append_rule(result: &mut Vec<u8>, notice: &[u8], id: &[u8], text: &[u8])
 }
 
 #[cfg(not(verus_keep_ghost))]
-use super::catalog::{self, Catalog, Content, Manifest};
+use super::catalog::{self, Catalog, Manifest};
 #[cfg(not(verus_keep_ghost))]
 use crate::rule_selection::{self, Mode, Row};
 #[cfg(not(verus_keep_ghost))]
@@ -106,38 +106,40 @@ impl Selection {
 pub(super) fn publish() -> Result<String, String> {
     let manifest: Manifest = catalog::parse(catalog::DEFAULT_MANIFEST.as_bytes())?;
     let catalog: Catalog = catalog::parse(catalog::DEFAULT_CATALOG.as_bytes())?;
+    publish_catalog(&catalog, &manifest)
+}
+
+#[cfg(not(verus_keep_ghost))]
+pub(super) fn publish_catalog(catalog: &Catalog, manifest: &Manifest) -> Result<String, String> {
+    #[derive(Serialize)]
+    struct Published<'a> {
+        schema: &'static str,
+        notice: &'a str,
+        rules: Vec<catalog::Body<'a>>,
+    }
+
     manifest.validate()?;
     catalog.validate()?;
-    let output = manifest.root();
-    // Compose validates the full closure and the layout against its nonempty bodies.
-    let (_, locale) = catalog.compose(output, &Default::default())?;
-    let ids = catalog.ordered_rule_ids(output)?;
-    let mut rules = Vec::new();
-    for id in ids {
-        let atom = catalog
-            .atoms
-            .iter()
-            .find(|a| a.id == id)
-            .ok_or_else(|| format!("unknown rule {id}"))?;
-        let variant = atom
-            .variants
-            .iter()
-            .find(|v| v.locale == output.locale)
-            .ok_or_else(|| format!("missing locale for {id}"))?;
-        let Content::Inline { text } = &variant.source else {
-            return Err(format!("published rule {id} requires an unbundled input"));
-        };
-        if !text.is_empty() {
-            rules.push(Rule {
-                id: id.to_owned(),
-                text: text.clone(),
-            });
+    let files = Default::default();
+    let projection = catalog.compose(manifest.root(), &files)?;
+    for body in &projection.bodies {
+        if matches!(
+            rule_selection::row(
+                &Mode::All,
+                body.id.as_bytes(),
+                body.text.trim().as_bytes(),
+                None,
+                None
+            ),
+            Row::Invalid
+        ) {
+            return Err(format!("empty or duplicate upstream rule: {}", body.id));
         }
     }
-    let feed = Feed {
-        schema: SCHEMA.into(),
-        notice: locale.projection_notice.clone(),
-        rules,
+    let feed = Published {
+        schema: SCHEMA,
+        notice: &projection.locale.projection_notice,
+        rules: projection.bodies,
     };
     serde_json::to_string_pretty(&feed)
         .map(|s| s + "\n")

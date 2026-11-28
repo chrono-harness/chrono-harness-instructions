@@ -83,24 +83,6 @@ pub(crate) fn rendered_depth(depth: u8, has_title: bool) -> (effective: Option<u
     if effective <= 6 { Some(effective as u8) } else { None }
 }
 
-pub(crate) fn active_dependency(stack: &[String], id: &str) -> (active: bool)
-    ensures active == (exists|i: int| 0 <= i < stack@.len()
-        && encode_utf8(stack@[i]@) == encode_utf8(id@)),
-{
-    let mut i = 0;
-    while i < stack.len()
-        invariant i <= stack@.len(),
-            forall|j: int| 0 <= j < i ==> encode_utf8(stack@[j]@) != encode_utf8(id@),
-        decreases stack.len() - i,
-    {
-        if super::verified_bytes::equal(stack[i].as_str().as_bytes(), id.as_bytes()) {
-            return true;
-        }
-        i += 1;
-    }
-    false
-}
-
 pub(crate) enum Dependency<T> {
     Cycle,
     Visited,
@@ -108,20 +90,13 @@ pub(crate) enum Dependency<T> {
     Open(T),
 }
 
-pub(crate) fn dependency<T>(stack: &[String], id: &str, visited: bool, entry: Option<T>)
+pub(crate) fn dependency<T>(active: bool, visited: bool, entry: Option<T>)
     -> (step: Dependency<T>)
-    ensures match step {
-        Dependency::Cycle => exists|i: int| 0 <= i < stack@.len()
-            && encode_utf8(stack@[i]@) == encode_utf8(id@),
-        Dependency::Visited => visited && forall|i: int| 0 <= i < stack@.len()
-            ==> encode_utf8(stack@[i]@) != encode_utf8(id@),
-        Dependency::Missing => !visited && entry.is_none() && forall|i: int| 0 <= i < stack@.len()
-            ==> encode_utf8(stack@[i]@) != encode_utf8(id@),
-        Dependency::Open(atom) => !visited && entry == Some(atom) && forall|i: int| 0 <= i < stack@.len()
-            ==> encode_utf8(stack@[i]@) != encode_utf8(id@),
-    },
+    ensures step == if active { Dependency::Cycle }
+        else if visited { Dependency::Visited }
+        else { match entry { Some(atom) => Dependency::Open(atom), None => Dependency::Missing } },
 {
-    if active_dependency(stack, id) {
+    if active {
         return Dependency::Cycle;
     }
     if visited {
@@ -131,6 +106,285 @@ pub(crate) fn dependency<T>(stack: &[String], id: &str, visited: bool, entry: Op
         Some(atom) => Dependency::Open(atom),
         None => Dependency::Missing,
     }
+}
+
+pub(crate) enum WalkError<'a> {
+    Cycle(&'a String, Vec<&'a String>),
+    Missing(&'a String, Vec<&'a String>),
+}
+
+#[derive(Clone, Copy)]
+struct Frame<'a> {
+    id: &'a String,
+    atom: &'a Atom,
+    next: usize,
+}
+
+// Each active frame contributes its unread edges and one step to close it.
+spec fn remaining(stack: Seq<Frame>) -> int
+    decreases stack.len(),
+{
+    if stack.len() == 0 { 0 } else {
+        remaining(stack.drop_last()) + stack.last().atom.requires@.len() - stack.last().next + 1
+    }
+}
+
+proof fn nonnegative_remaining(stack: Seq<Frame>)
+    requires forall|i: int| 0 <= i < stack.len() ==> #[trigger] stack[i].next <= stack[i].atom.requires@.len(),
+    ensures 0 <= remaining(stack),
+    decreases stack.len(),
+{
+    if stack.len() > 0 {
+        assert forall|i: int| 0 <= i < stack.drop_last().len() implies
+            #[trigger] stack.drop_last()[i].next <= stack.drop_last()[i].atom.requires@.len() by {
+            assert(stack.drop_last()[i] == stack[i]);
+        }
+        nonnegative_remaining(stack.drop_last());
+        assert(stack.last() == stack[stack.len() - 1]);
+    }
+}
+
+pub(crate) open spec fn has_dependencies(atoms: Map<&String, &Atom>, included: Set<&String>, id: &String) -> bool {
+    atoms.contains_key(id)
+        && forall|position: int| 0 <= position < atoms[id].requires@.len() ==>
+            included.contains(#[trigger] (&atoms[id].requires@[position]))
+}
+
+pub(crate) open spec fn closed(atoms: Map<&String, &Atom>, included: Set<&String>) -> bool {
+    forall|id: &String| included.contains(id) ==> #[trigger] has_dependencies(atoms, included, id)
+}
+
+fn error_path<'a>(stack: &[Frame<'a>]) -> (path: Vec<&'a String>)
+    ensures path@ == stack@.map(|_i, frame: Frame<'a>| frame.id),
+{
+    let mut path = Vec::new();
+    let mut i = 0;
+    while i < stack.len()
+        invariant i <= stack@.len(), path@.len() == i,
+            forall|j: int| 0 <= j < i ==> path@[j] == stack@[j].id,
+        decreases stack.len() - i,
+    {
+        path.push(stack[i].id);
+        i += 1;
+    }
+    path
+}
+
+/// Depth-first postorder in root and requirement order. The active path lives on the heap.
+pub(crate) fn walk<'a>(atoms: &BTreeMap<&'a String, &'a Atom>, roots: &[&'a String])
+    -> (result: Result<Vec<&'a Atom>, WalkError<'a>>)
+    requires vstd::laws_cmp::obeys_cmp::<&String>(),
+        forall|id: &String| atoms@.contains_key(id) ==> &(#[trigger] atoms@[id]).id == id,
+    ensures match result {
+        Ok(order) => {
+            let ids = order@.map(|_i, atom: &Atom| &atom.id);
+            &&& ids.no_duplicates()
+            &&& roots@.to_set().subset_of(ids.to_set())
+            &&& forall|i: int| 0 <= i < order@.len() ==> {
+                &&& atoms@.contains_pair(ids[i], #[trigger] order@[i])
+                &&& has_dependencies(atoms@, ids.take(i).to_set(), ids[i])
+            }
+            &&& forall|candidate: Set<&String>| roots@.to_set().subset_of(candidate)
+                && #[trigger] closed(atoms@, candidate) ==> ids.to_set().subset_of(candidate)
+        },
+        Err(WalkError::Cycle(id, path)) => path@.contains(id),
+        Err(WalkError::Missing(id, path)) => !atoms@.contains_key(id) && !path@.contains(id),
+    },
+{
+    broadcast use vstd::std_specs::btree::group_btree_axioms;
+    broadcast use vstd::set::group_set_axioms;
+    broadcast use vstd::seq::group_seq_axioms;
+    broadcast use vstd::seq_lib::group_seq_properties;
+    let mut root = 0;
+    let mut stack: Vec<Frame> = Vec::new();
+    let mut active: BTreeSet<&String> = BTreeSet::new();
+    let mut seen: BTreeSet<&String> = BTreeSet::new();
+    let mut order: Vec<&Atom> = Vec::new();
+    while root < roots.len() || !stack.is_empty()
+        invariant
+            vstd::laws_cmp::obeys_cmp::<&String>(),
+            root <= roots@.len(),
+            0 <= remaining(stack@),
+            atoms@.dom().finite(),
+            forall|id: &String| atoms@.contains_key(id) ==> &(#[trigger] atoms@[id]).id == id,
+            seen@.subset_of(atoms@.dom()),
+            active@.subset_of(seen@),
+            active@ == stack@.map(|_i, frame: Frame| frame.id).to_set(),
+            stack@.map(|_i, frame: Frame| frame.id).no_duplicates(),
+            forall|i: int| 0 <= i < stack@.len() ==> {
+                let frame = #[trigger] stack@[i];
+                &&& atoms@.contains_pair(frame.id, frame.atom)
+                &&& frame.next <= frame.atom.requires@.len()
+                &&& forall|j: int| 0 <= j < frame.next ==> {
+                    let required = #[trigger] &frame.atom.requires@[j];
+                    if j + 1 == frame.next && i + 1 < stack@.len() {
+                        required == stack@[i + 1].id
+                    } else {
+                        seen@.difference(active@).contains(required)
+                    }
+                }
+                &&& (i + 1 < stack@.len() ==> frame.next > 0)
+            },
+            roots@.take(root as int).to_set().subset_of(seen@),
+            ({
+                let ids = order@.map(|_i, atom: &Atom| &atom.id);
+                &&& ids.no_duplicates()
+                &&& ids.to_set() == seen@.difference(active@)
+                &&& forall|i: int| 0 <= i < order@.len() ==> {
+                    &&& atoms@.contains_pair(ids[i], #[trigger] order@[i])
+                    &&& has_dependencies(atoms@, ids.take(i).to_set(), ids[i])
+                }
+            }),
+            forall|candidate: Set<&String>| roots@.to_set().subset_of(candidate)
+                && #[trigger] closed(atoms@, candidate) ==> seen@.subset_of(candidate),
+        decreases atoms@.dom().difference(seen@).len(),
+            roots@.len() as int - root + remaining(stack@),
+    {
+        let ghost old_stack = stack@;
+        let ghost old_seen = seen@;
+        let ghost old_active = active@;
+        let ghost old_order = order@;
+        let ghost old_root = root;
+        let ghost old_frames = old_stack.map(|_i, entry: Frame| entry.id);
+        let ghost parent = if old_stack.len() == 0 { None } else { Some(old_stack.last()) };
+        let id;
+        if stack.is_empty() {
+            id = roots[root];
+            root += 1;
+        } else {
+            let top = stack.len() - 1;
+            let frame = stack[top];
+            if frame.next == frame.atom.requires.len() {
+                stack.pop();
+                active.remove(&frame.id);
+                order.push(frame.atom);
+                proof {
+                    assert(stack@ =~= old_stack.drop_last());
+                    let previous = old_order.map(|_i, atom: &Atom| &atom.id);
+                    let ids = order@.map(|_i, atom: &Atom| &atom.id);
+                    assert(ids =~= previous.push(frame.id));
+                    let frames = stack@.map(|_i, entry: Frame| entry.id);
+                    assert(old_frames =~= frames.push(frame.id));
+                    assert(frames =~= old_frames.drop_last());
+                    assert(frames.no_duplicates()) by {
+                        assert forall|i: int, j: int| 0 <= i < j < frames.len()
+                            implies frames[i] != frames[j] by {
+                            assert(old_frames[i] == frames[i] && old_frames[j] == frames[j]);
+                        }
+                    }
+                    assert(active@ == old_active.remove(frame.id));
+                    assert forall|i: int| 0 <= i < frames.len() implies frames[i] != frame.id by {
+                        assert(old_stack.map(|_i, entry: Frame| entry.id)[i] == frames[i]);
+                        assert(old_stack.map(|_i, entry: Frame| entry.id).last() == frame.id);
+                    }
+                    assert(!frames.contains(frame.id));
+                    frames.lemma_push_to_set_commute(frame.id);
+                    previous.lemma_push_to_set_commute(frame.id);
+                    assert(active@ =~= frames.to_set());
+                    assert(old_active.contains(frame.id));
+                    assert(seen@.contains(frame.id));
+                    assert(previous.to_set() == old_seen.difference(old_active));
+                    assert(!previous.to_set().contains(frame.id));
+                    assert(ids.no_duplicates());
+                    assert(ids.to_set() =~= seen@.difference(active@)) by {
+                        assert forall|key: &String| ids.to_set().contains(key)
+                            <==> seen@.difference(active@).contains(key) by {
+                            assert(ids.to_set().contains(key) == (previous.to_set().contains(key) || key == frame.id));
+                        }
+                    }
+                    assert(remaining(old_stack) == remaining(stack@) + 1);
+                    assert forall|i: int| 0 <= i < stack@.len() implies
+                        #[trigger] stack@[i].next <= stack@[i].atom.requires@.len() by {
+                        assert(stack@[i] == old_stack[i]);
+                    }
+                    nonnegative_remaining(stack@);
+                    assert forall|i: int| 0 <= i < order@.len() implies
+                        atoms@.contains_pair(ids[i], #[trigger] order@[i])
+                            && has_dependencies(atoms@, ids.take(i).to_set(), ids[i]) by {
+                        if i < old_order.len() {
+                            assert(ids.take(i) =~= previous.take(i));
+                        } else {
+                            assert(ids.take(i) =~= previous);
+                            assert forall|j: int| 0 <= j < frame.atom.requires@.len() implies
+                                previous.to_set().contains(#[trigger] (&frame.atom.requires@[j])) by {
+                                // Completed children precede their caller.
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+            id = &frame.atom.requires[frame.next];
+            stack.pop();
+            stack.push(Frame { next: frame.next + 1, ..frame });
+            proof {
+                assert(stack@.drop_last() =~= old_stack.drop_last());
+                assert(remaining(stack@) == remaining(old_stack) - 1);
+            }
+        }
+        let ghost advanced = stack@;
+        proof {
+            assert(advanced.map(|_i, frame: Frame| frame.id) =~= old_frames);
+            assert forall|i: int| 0 <= i < advanced.len() implies
+                #[trigger] advanced[i].next <= advanced[i].atom.requires@.len() by {
+                if i + 1 < advanced.len() { assert(advanced[i] == old_stack[i]); }
+            }
+            nonnegative_remaining(advanced);
+        }
+        let in_path = active.contains(&id);
+        let visited = seen.contains(&id);
+        let entry = atoms.get(&id);
+        assert(in_path == active@.contains(id));
+        assert(visited == seen@.contains(id));
+        assert(entry.is_some() == atoms@.contains_key(id));
+        match dependency(in_path, visited, entry) {
+            Dependency::Cycle => {
+                let path = error_path(&stack);
+                assert(path@ =~= old_frames);
+                assert(path@.to_set().contains(id));
+                return Err(WalkError::Cycle(id, path));
+            },
+            Dependency::Visited => {},
+            Dependency::Missing => return Err(WalkError::Missing(id, error_path(&stack))),
+            Dependency::Open(atom) => {
+                proof {
+                    assert(atoms@.contains_pair(id, *atom));
+                    atoms@.dom().lemma_set_insert_diff_decreases(seen@, id);
+                }
+                active.insert(id);
+                seen.insert(id);
+                stack.push(Frame { id, atom: *atom, next: 0 });
+                proof {
+                    let frames = stack@.map(|_i, entry: Frame| entry.id);
+                    assert(frames =~= old_frames.push(id));
+                    old_frames.lemma_push_to_set_commute(id);
+                    assert(!old_frames.contains(id));
+                    assert(frames.no_duplicates());
+                    assert(stack@.drop_last() =~= advanced);
+                    assert(remaining(stack@) == remaining(advanced) + atom.requires@.len() + 1);
+                    assert forall|candidate: Set<&String>| roots@.to_set().subset_of(candidate)
+                        && #[trigger] closed(atoms@, candidate) implies seen@.subset_of(candidate) by {
+                        assert(old_seen.subset_of(candidate));
+                        if let Some(frame) = parent {
+                            assert(old_frames.last() == frame.id);
+                            assert(old_frames.contains(frame.id));
+                            assert(old_active.contains(frame.id));
+                            assert(old_seen.contains(frame.id));
+                            assert(has_dependencies(atoms@, candidate, frame.id));
+                            assert(candidate.contains(&frame.atom.requires@[frame.next as int]));
+                        } else {
+                            assert(roots@[old_root as int] == id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    proof {
+        assert(roots@.take(root as int) =~= roots@);
+        assert(active@ =~= Set::<&String>::empty());
+    }
+    Ok(order)
 }
 
 /// Resolve a requested layout before considering dependency order.
@@ -160,81 +414,100 @@ pub(crate) fn layout_for<'a>(id: Option<&'a String>, layouts: &[Layout])
     Err(requested)
 }
 
-/// Without a layout the dependency traversal already supplies the publication order.
-pub(crate) fn selected_ids<'a>(atoms: &[&'a Atom]) -> (ids: Vec<&'a str>)
-    ensures ids@.len() == atoms@.len(),
-        forall|i:int| 0 <= i < atoms@.len() ==> ids@[i]@ == atoms@[i].id@,
+#[cfg_attr(not(verus_keep_ghost), derive(Serialize))]
+#[derive(Clone, Copy)]
+pub(crate) struct Body<'a> {
+    pub id: &'a String,
+    pub text: &'a str,
+}
+
+/// Preserve each selected body exactly. A zero-length variant contributes no body.
+pub(crate) fn record_body<'a>(bodies: &mut Vec<Body<'a>>, body: Body<'a>)
+    ensures bodies@ == if body.text@.len() == 0 { old(bodies)@ } else { old(bodies)@.push(body) },
 {
-    let mut ids: Vec<&str> = Vec::new();
-    let mut i = 0;
-    while i < atoms.len()
-        invariant i <= atoms@.len(), ids@.len() == i,
-            forall|j:int| 0 <= j < i ==> ids@[j]@ == atoms@[j].id@,
-        decreases atoms.len() - i,
-    {
-        ids.push(atoms[i].id.as_str());
-        i += 1;
+    if !body.text.is_empty() {
+        bodies.push(body);
     }
-    ids
 }
 
-pub(crate) open spec fn section_order(sections: Seq<Section>) -> Seq<Seq<char>>
-    decreases sections.len(),
+/// A section appends the resolved body of each placement, in declaration order.
+pub(crate) fn place_section<'a>(
+    available: &mut BTreeMap<&'a String, Body<'a>>,
+    ordered: &mut Vec<Body<'a>>,
+    ids: &'a [String],
+) -> (out: Result<(), &'a String>)
+    requires vstd::laws_cmp::obeys_cmp::<&String>(),
+    ensures
+        ordered@.take(old(ordered)@.len() as int) == old(ordered)@,
+        ({
+            let count = ordered@.len() - old(ordered)@.len();
+            let resolved = ids@.take(count).map(|_i, id: String| &id).to_set();
+            &&& 0 <= count <= ids@.len()
+            &&& forall|i: int| 0 <= i < count ==> {
+                let key = #[trigger] &ids@[i];
+                old(available)@.contains_key(key)
+                    && ordered@[old(ordered)@.len() + i] == old(available)@[key]
+            }
+            &&& available@ == old(available)@.remove_keys(resolved)
+            &&& match out {
+                Ok(()) => count == ids@.len(),
+                Err(id) => count < ids@.len() && id == &ids@[count]
+                    && !available@.contains_key(id),
+            }
+        }),
 {
-    if sections.len() == 0 { Seq::empty() }
-    else { section_order(sections.drop_last()) + sections.last().atoms@.map(|_index, id: String| id@) }
-}
-
-/// Append the actual sections in declaration order, including empty sections.
-pub(crate) fn layout_ids(sections: &[Section]) -> (ids: Vec<&str>)
-    ensures ids@.map(|_index, id: &str| id@) == section_order(sections@),
-{
-    let mut ids: Vec<&str> = Vec::new();
+    broadcast use vstd::std_specs::btree::group_btree_axioms;
+    broadcast use vstd::seq::group_seq_axioms;
+    broadcast use vstd::seq_lib::group_seq_properties;
+    broadcast use vstd::set::group_set_axioms;
+    let ghost initial = available@;
+    let ghost previous = ordered@;
     let mut i = 0;
-    while i < sections.len()
-        invariant i <= sections@.len(),
-            ids@.map(|_index, id: &str| id@) == section_order(sections@.take(i as int)),
-        decreases sections.len() - i,
+    while i < ids.len()
+        invariant
+            vstd::laws_cmp::obeys_cmp::<&String>(),
+            initial == old(available)@, previous == old(ordered)@,
+            i <= ids@.len(),
+            ordered@.len() == previous.len() + i,
+            ordered@.take(previous.len() as int) == previous,
+            forall|j: int| 0 <= j < i ==> {
+                let key = #[trigger] &ids@[j];
+                initial.contains_key(key) && ordered@[previous.len() + j] == initial[key]
+            },
+            available@ == initial.remove_keys(ids@.take(i as int).map(|_i, id: String| &id).to_set()),
+        decreases ids.len() - i,
     {
-        let ghost previous = ids@;
-        append_section(&mut ids, &sections[i].atoms);
+        let id = &ids[i];
+        let ghost before = available@;
+        match available.remove(&id) {
+            Some(body) => {
+                assert(before.contains_pair(id, body));
+                ordered.push(body);
+            }
+            None => {
+                assert(!before.contains_key(id));
+                assert(available@ =~= before);
+                return Err(id);
+            }
+        }
         proof {
-            let prefix = sections@.take(i + 1);
-            assert(prefix.drop_last() =~= sections@.take(i as int));
-            assert(prefix.last() == sections@[i as int]);
-            assert(ids@.map(|_index, id: &str| id@) =~=
-                previous.map(|_index, id: &str| id@) + sections@[i as int].atoms@.map(|_index, id: String| id@));
+            let prefix = ids@.take(i as int).map(|_i, id: String| &id);
+            let next = ids@.take(i + 1).map(|_i, id: String| &id);
+            assert(next =~= prefix.push(id));
+            prefix.lemma_push_to_set_commute(id);
+            assert(available@ =~= initial.remove_keys(next.to_set()));
         }
         i += 1;
     }
-    assert(sections@.take(i as int) =~= sections@);
-    ids
+    Ok(())
 }
 
-/// A section starts after the entire preceding prefix and retains each declared ID in order.
-pub(crate) fn append_section<'a>(order: &mut Vec<&'a str>, atoms: &'a [String])
-    ensures order@.len() == old(order)@.len() + atoms@.len(),
-        forall|i: int| 0 <= i < old(order)@.len() ==> order@[i] == old(order)@[i],
-        forall|i: int| 0 <= i < atoms@.len() ==> order@[old(order)@.len() + i]@ == atoms@[i]@,
-{
-    let mut i = 0;
-    while i < atoms.len()
-        invariant i <= atoms@.len(), order@.len() == old(order)@.len() + i,
-            forall|j: int| 0 <= j < old(order)@.len() ==> order@[j] == old(order)@[j],
-            forall|j: int| 0 <= j < i ==> order@[old(order)@.len() + j]@ == atoms@[j]@,
-        decreases atoms.len() - i,
-    {
-        order.push(atoms[i].as_str());
-        i += 1;
-    }
-}
 }
 
 #[cfg(not(verus_keep_ghost))]
 use crate::rule_selection::catalog_admission::{self, LocaleError, OutputError, VariantError};
 #[cfg(not(verus_keep_ghost))]
 use serde::{Deserialize, Serialize};
-#[cfg(not(verus_keep_ghost))]
 use std::collections::{BTreeMap, BTreeSet};
 #[cfg(not(verus_keep_ghost))]
 use std::path::Path;
@@ -533,7 +806,7 @@ impl Catalog {
         let mut atoms = BTreeMap::new();
         for atom in &self.atoms {
             identity(&atom.id)?;
-            if !catalog_admission::register_atom(&mut atoms, atom.id.as_str(), atom) {
+            if !catalog_admission::register_atom(&mut atoms, &atom.id, atom) {
                 return Err(format!("duplicate atom {}", atom.id));
             }
             let mut variants = BTreeSet::new();
@@ -550,16 +823,8 @@ impl Catalog {
                 )?;
             }
         }
-        let mut visited = BTreeSet::new();
-        for atom in &self.atoms {
-            visit(
-                &atom.id,
-                &atoms,
-                &mut visited,
-                &mut Vec::new(),
-                &mut Vec::new(),
-            )?;
-        }
+        let roots: Vec<_> = self.atoms.iter().map(|atom| &atom.id).collect();
+        walk(&atoms, &roots).map_err(WalkError::diagnostic)?;
         let mut layouts = BTreeSet::new();
         for layout in &self.layouts {
             identity(&layout.id)?;
@@ -597,7 +862,7 @@ impl Catalog {
                     content_valid(&title.text).map_err(|e| format!("{at}: {e}"))?;
                 }
                 for id in &section.atoms {
-                    if !atoms.contains_key(id.as_str()) {
+                    if !atoms.contains_key(&id) {
                         return Err(format!("{at}: unknown atom {id}"));
                     }
                     if !placed.insert(id) {
@@ -618,31 +883,11 @@ impl Catalog {
             })
             .collect()
     }
-    fn selected_atoms(&self, output: &Output) -> Result<Vec<&Atom>, String> {
-        let atoms: BTreeMap<_, _> = self.atoms.iter().map(|a| (a.id.as_str(), a)).collect();
-        let mut order = Vec::new();
-        let mut visited = BTreeSet::new();
-        for root in &output.roots {
-            visit(root, &atoms, &mut visited, &mut Vec::new(), &mut order)
-                .map_err(|e| format!("output {}: {e}", output.id))?;
-        }
-        Ok(order)
-    }
-
-    pub fn ordered_rule_ids(&self, output: &Output) -> Result<Vec<&str>, String> {
-        if let Some(layout) = layout_for(output.layout.as_ref(), &self.layouts)
-            .map_err(|id| format!("unknown layout {id}"))?
-        {
-            return Ok(layout_ids(&self.layouts[layout].sections));
-        }
-        Ok(selected_ids(&self.selected_atoms(output)?))
-    }
-
-    pub fn compose(
-        &self,
-        output: &Output,
-        files: &BTreeMap<String, Vec<u8>>,
-    ) -> Result<(String, &Locale), String> {
+    pub fn compose<'a>(
+        &'a self,
+        output: &'a Output,
+        files: &'a BTreeMap<String, Vec<u8>>,
+    ) -> Result<Composition<'a>, String> {
         let locale = self
             .locales
             .iter()
@@ -653,9 +898,11 @@ impl Catalog {
                     output.id, output.locale
                 )
             })?;
-        let order = self.selected_atoms(output)?;
-        let mut parts = Vec::new();
-        let mut bodies = BTreeMap::new();
+        let atoms = self.atoms.iter().map(|atom| (&atom.id, atom)).collect();
+        let roots: Vec<_> = output.roots.iter().collect();
+        let order = walk(&atoms, &roots)
+            .map_err(|error| format!("output {}: {}", output.id, error.diagnostic()))?;
+        let mut bodies = Vec::new();
         for atom in order {
             let variant = atom
                 .variants
@@ -682,10 +929,7 @@ impl Catalog {
                     output.id, atom.id, output.locale
                 )
             })?;
-            if !text.is_empty() {
-                parts.push(text);
-                bodies.insert(atom.id.as_str(), text);
-            }
+            record_body(&mut bodies, Body { id: &atom.id, text });
         }
         if let Some(id) = &output.layout {
             let at = format!("output {} layout {id}", output.id);
@@ -694,6 +938,7 @@ impl Catalog {
                 .flatten()
                 .map(|index| &self.layouts[index])
                 .ok_or_else(|| format!("output {}: unknown layout {id}", output.id))?;
+            let mut available = bodies.drain(..).map(|body| (body.id, body)).collect();
             let mut arranged = Vec::new();
             for (index, section) in layout.sections.iter().enumerate() {
                 let Some(depth) = rendered_depth(section.depth, output.title.is_some()) else {
@@ -714,55 +959,63 @@ impl Catalog {
                         )
                     })?;
                 arranged.push(format!("{} {}", "#".repeat(depth.into()), title.text));
-                for atom in &section.atoms {
-                    let text = bodies.remove(atom.as_str()).ok_or_else(|| {
-                        format!("{at}: atom {atom} is outside the selected nonempty body closure")
-                    })?;
-                    arranged.push(text.to_owned());
-                }
+                let start = bodies.len();
+                place_section(&mut available, &mut bodies, &section.atoms).map_err(|atom| {
+                    format!("{at}: atom {atom} is outside the selected nonempty body closure")
+                })?;
+                arranged.extend(bodies[start..].iter().map(|body| body.text.to_owned()));
             }
-            if !bodies.is_empty() {
+            if !available.is_empty() {
+                let missing = available.keys().map(|id| id.as_str()).collect::<Vec<_>>();
                 return Err(format!(
                     "{at}: missing placement for {}",
-                    bodies.keys().copied().collect::<Vec<_>>().join(", ")
+                    missing.join(", ")
                 ));
             }
-            return Ok((arranged.join("\n\n"), locale));
+            return Ok(Composition {
+                markdown: arranged.join("\n\n"),
+                locale,
+                bodies,
+            });
         }
-        Ok((parts.join("\n\n"), locale))
+        let markdown = bodies
+            .iter()
+            .map(|body| body.text)
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        Ok(Composition {
+            markdown,
+            locale,
+            bodies,
+        })
     }
 }
+
 #[cfg(not(verus_keep_ghost))]
-fn visit<'a>(
-    id: &str,
-    atoms: &BTreeMap<&str, &'a Atom>,
-    visited: &mut BTreeSet<String>,
-    stack: &mut Vec<String>,
-    order: &mut Vec<&'a Atom>,
-) -> Result<(), String> {
-    let atom = match dependency(stack, id, visited.contains(id), atoms.get(id).copied()) {
-        Dependency::Cycle => {
-            let mut chain = stack.clone();
-            chain.push(id.into());
-            return Err(format!("dependency cycle: {}", chain.join(" -> ")));
+pub(super) struct Composition<'a> {
+    pub markdown: String,
+    pub locale: &'a Locale,
+    pub bodies: Vec<Body<'a>>,
+}
+
+#[cfg(not(verus_keep_ghost))]
+impl WalkError<'_> {
+    fn diagnostic(self) -> String {
+        match self {
+            Self::Cycle(id, path) => {
+                let mut chain: Vec<_> = path.into_iter().map(String::as_str).collect();
+                chain.push(id.as_str());
+                format!("dependency cycle: {}", chain.join(" -> "))
+            }
+            Self::Missing(id, path) => {
+                let chain: Vec<_> = path.into_iter().map(String::as_str).collect();
+                format!(
+                    "unresolved atom {id}; dependency chain: {}",
+                    chain.join(" -> ")
+                )
+            }
         }
-        Dependency::Visited => return Ok(()),
-        Dependency::Missing => {
-            return Err(format!(
-                "unresolved atom {id}; dependency chain: {}",
-                stack.join(" -> ")
-            ));
-        }
-        Dependency::Open(atom) => atom,
-    };
-    stack.push(id.into());
-    for required in &atom.requires {
-        visit(required, atoms, visited, stack, order)?;
     }
-    stack.pop();
-    visited.insert(id.into());
-    order.push(atom);
-    Ok(())
 }
 #[cfg(not(verus_keep_ghost))]
 impl Output {

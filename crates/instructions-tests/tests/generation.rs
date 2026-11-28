@@ -6,8 +6,8 @@ use vstd::prelude::*;
 
 verus! {
 pub fn release_version_line() -> (value: &'static str)
-    ensures value@ == "chrono-instructions 0.1.10\n"@,
-{ "chrono-instructions 0.1.10\n" }
+    ensures value@ == "chrono-instructions 0.1.11\n"@,
+{ "chrono-instructions 0.1.11\n" }
 }
 
 #[cfg(not(verus_keep_ghost))]

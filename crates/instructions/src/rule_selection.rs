@@ -23,15 +23,6 @@ pub mod host_paths;
 #[path = "catalog_admission.rs"]
 pub mod catalog_admission;
 
-#[cfg(all(feature = "test-support", not(verus_keep_ghost)))]
-pub fn rule_order(catalog: &[u8], output: &[u8]) -> Result<Vec<String>, String> {
-    let catalog: crate::catalog::Catalog = crate::catalog::parse(catalog)?;
-    let output = crate::catalog::parse(output)?;
-    catalog
-        .ordered_rule_ids(&output)
-        .map(|ids| ids.into_iter().map(str::to_owned).collect())
-}
-
 verus! {
 
 pub enum Mode { All, Only, Off }
