@@ -24,6 +24,22 @@ mod roadmap;
 
 verus! {
 #[cfg(verus_keep_ghost)]
+fn commit_observation_matches_only_the_complete_original_identity(
+    identity: &[u8], other: &[u8], digest: &[u8; 32], changed: &[u8; 32],
+) {
+    use policy::transaction::same_observation;
+    let expected = (identity, 0o644u32, Some(digest));
+    let exact = same_observation(expected, expected);
+    let mode_drift = same_observation((identity, 0o600, Some(digest)), expected);
+    let no_bytes = same_observation((identity, 0o644, None), expected);
+    let identity_check = same_observation((other, 0o644, Some(digest)), expected);
+    let contents_check = same_observation((identity, 0o644, Some(changed)), expected);
+    assert(exact && !mode_drift && !no_bytes);
+    assert(identity_check == (identity@ == other@));
+    assert(contents_check == (digest@ == changed@));
+}
+
+#[cfg(verus_keep_ghost)]
 fn hosted_publication_follows_observed_refs_and_diff(current: bool, existing: bool, code: i32) {
     let base = publish_rules::publication_base(current, existing);
     if !current { assert(base is Stale); }
@@ -246,6 +262,10 @@ fn native_recipe_requires_actual_success_for_each_registered_consumer() {
         names,
         [
             "atomic::late_extra_output_failure_rolls_back_nested_directories_and_prior_outputs",
+            "atomic::graph_integrity_includes_unselected_atoms_and_diagnoses_chains",
+            "atomic::layout_rejects_invalid_placement_locale_and_depth_before_any_writes",
+            "atomic::invalid_skill_metadata_and_format_bindings_fail_without_writes",
+            "input_drift_before_commit_rolls_back_without_touching_the_external_edit",
             "raw_event_reader_checks_every_captured_identity",
             "live_rule_selection_follows_upstream_and_preserves_local_work",
             "root_guides_follow_published_selection_without_losing_host_text",

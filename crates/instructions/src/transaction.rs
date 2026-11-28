@@ -23,6 +23,22 @@ pub(crate) fn same_digest(left: Option<&[u8; 32]>, right: Option<&[u8; 32]>) -> 
         _ => false,
     }
 }
+
+pub(crate) fn same_observation(
+    actual: (&[u8], u32, Option<&[u8; 32]>),
+    expected: (&[u8], u32, Option<&[u8; 32]>),
+) -> (same: bool)
+    ensures same == (actual.0@ == expected.0@ && actual.1 == expected.1
+        && match (actual.2, expected.2) {
+            (Some(left), Some(right)) => left@ == right@,
+            (None, None) => true,
+            _ => false,
+        }),
+{
+    verified_bytes::equal(actual.0, expected.0)
+        && actual.1 == expected.1
+        && same_digest(actual.2, expected.2)
+}
 }
 
 #[cfg(not(verus_keep_ghost))]
@@ -274,9 +290,10 @@ struct Object {
 #[cfg(not(verus_keep_ghost))]
 impl PartialEq for Object {
     fn eq(&self, other: &Self) -> bool {
-        self.identity == other.identity
-            && self.mode == other.mode
-            && same_digest(self.bytes.as_ref(), other.bytes.as_ref())
+        same_observation(
+            (self.identity.as_bytes(), self.mode, self.bytes.as_ref()),
+            (other.identity.as_bytes(), other.mode, other.bytes.as_ref()),
+        )
     }
 }
 
@@ -533,10 +550,19 @@ fn check_bindings(root: &Path, bindings: &Bindings) -> Result<(), String> {
     for external in &bindings.external {
         let requested = PathBuf::from(std::ffi::OsString::from_vec(external.requested.clone()));
         let (_, observed) = external_input(&requested)?;
-        if observed.resolved != external.resolved
-            || observed.identity != external.identity
-            || !same_digest(Some(&observed.sha256), Some(&external.sha256))
-            || observed.mode != external.mode
+        if !verified_bytes::equal(&observed.resolved, &external.resolved)
+            || !same_observation(
+                (
+                    observed.identity.as_bytes(),
+                    observed.mode,
+                    Some(&observed.sha256),
+                ),
+                (
+                    external.identity.as_bytes(),
+                    external.mode,
+                    Some(&external.sha256),
+                ),
+            )
         {
             return Err(super::error(
                 &requested,
@@ -578,7 +604,7 @@ fn install(root: &Path, plan: &Plan, directory: &Path, fault: &Fault) -> Result<
             }
         }
     }
-    Ok(())
+    check_bindings(root, &plan.bindings)
 }
 
 #[cfg(not(verus_keep_ghost))]
