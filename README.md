@@ -64,7 +64,7 @@ event-format 接受 agent、session、model、parent、task、event、action、s
 
 `event-regex` 提供Python、PCRE2 和 JavaScript 均可使用的跨行表达式，匹配完整的三行内容，捕获组 1 到 9 依次为 event、parent、task、agent、session、model、action、state、target。`\1` 要求末行 UUID 与首行逐字一致。各环境关闭多行、忽略大小写和 dotall 模式。比如在 Python 中可使用 `re.fullmatch(pattern.rstrip("\n"), frame, flags=re.ASCII).groups()`。应从 Markdown 中识别出顶层候选后再匹配。正文原样复制仍能通过语法校验。[可复制正则](assets/instructions/github-event-v4.regex) · [完整规则](assets/instructions/catalog.json)
 
-工作事件读取器按原始帧从第一个字节起的完整 `<!-- chrono-agent:v3 ` 前缀选择旧语法，其余帧由 v4 语法校验。该分派的 Verus 证明与实际读取器共享实现，独立预期覆盖任意后缀、任意截断和任意前缀字节差异。捕获字节的身份关系也有 Verus 证明：v3、v4 的结束标记须重复开头的 event，session、parent、task 和 event 两两不同。历史 v2 传入四个原始 ID。登记检查同时收取生产根、独立测试根和实际读取器的反例结果。GFM 结构由 pulldown-cmark 提供，字段词法和捕获由 regex 提供，其余边界见上述协议。
+工作事件读写复用两份登记的 Verus 根。实际 CLI 根据 pulldown-cmark 的块类型、原始字节范围和嵌套顺序识别顶层标记，并检查标记唯一性及最后可见段落的位置。读取器按完整 `<!-- chrono-agent:v3 ` 前缀选择 v3。已发布的三份正则提供字段词法和捕获，Serde 提供九字段 JSON 的编解码。Verus 判法根据捕获结果报告对应版本的畸形错误，先比较首尾 event，再核对四个 ID 各自独立。读取器最后检查正文分隔。格式化用同一路径读回，并逐字节核对九个字段。登记检查同时收取生产根、独立预期根和实际读取器的原生测试。
 
 上游规则的选择由正式检查收取生产及独立预期证明。规则 ID 和上游重复行按完整字节比较，选中条目保持上游顺序。关闭或空单选可离线使用。同步前检查输出是否包含受宿主管理的界标，失败时保留原指南。JSON 解码、Unicode 去首尾空白、树集合按键查询、网络和文件事务按各自边界工作。
 
