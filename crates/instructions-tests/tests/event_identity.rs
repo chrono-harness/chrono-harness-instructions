@@ -106,4 +106,66 @@ fn distinguishes_every_identity_role_and_both_delimiters() {
     expect(matches!(policy::identity(s,p,t,p,Some(p)), policy::Identity::ReusedId));
     expect(matches!(policy::identity(s,p,t,t,Some(t)), policy::Identity::ReusedId));
 }
+#[cfg_attr(not(verus_keep_ghost), test)]
+fn marker_inventory_admits_only_one_ordered_candidate() {
+    use layout::{Frame, Marker};
+    expect(matches!(layout::select_frame(&[]), Frame::MissingOrAmbiguous));
+    expect(matches!(layout::select_frame(&[Marker::Legacy(8)]), Frame::Legacy(8)));
+    expect(matches!(layout::select_frame(&[Marker::Opening(8)]), Frame::MissingOrAmbiguous));
+    expect(matches!(layout::select_frame(&[Marker::Opening(8), Marker::Closing(34)]),
+        Frame::Framed(8, 34)));
+    expect(matches!(layout::select_frame(&[Marker::Closing(8), Marker::Opening(34)]),
+        Frame::MissingOrAmbiguous));
+    expect(matches!(layout::select_frame(&[Marker::Legacy(8), Marker::Legacy(34)]),
+        Frame::MissingOrAmbiguous));
+    expect(matches!(layout::select_frame(&[Marker::Legacy(2), Marker::Opening(8), Marker::Closing(34)]),
+        Frame::MissingOrAmbiguous));
+    expect(matches!(layout::select_frame(&[Marker::Opening(8), Marker::Closing(34), Marker::Opening(40)]),
+        Frame::MissingOrAmbiguous));
+}
+
+#[cfg_attr(not(verus_keep_ghost), test)]
+fn event_admission_keeps_terminator_and_layout_errors_in_order() {
+    use layout::FrameLayout;
+    let summary: &[u8] = &[67u8];
+    let paragraph = Some((2usize, summary));
+    expect(layout::body_end(&[10u8, 10]) == Some(1));
+    expect(layout::body_end(&[13u8, 10]).is_none());
+    expect(layout::body_end(&[]) == Some(0));
+    expect(layout::is_top_level(0));
+    expect(!layout::is_top_level(1));
+    expect(matches!(layout::framed_layout(paragraph, 0, 4, None), FrameLayout::MissingSummary));
+    expect(matches!(layout::framed_layout(None, 0, 4, Some((1, None))), FrameLayout::MissingClosing));
+    expect(matches!(layout::framed_layout(None, 0, 4, Some((1, Some(summary)))),
+        FrameLayout::HiddenOrMisplaced));
+    expect(matches!(layout::framed_layout(paragraph, 0, 4, Some((1, Some(summary)))),
+        FrameLayout::Visible));
+}
+
+#[cfg(verus_keep_ghost)]
+fn opening_marker_keeps_the_observed_start(start: usize, raw: &[u8], rest: &[u8])
+    requires raw@ == "<!-- chrono-agent:".spec_bytes() + rest@,
+{
+    let ghost prefix = "<!-- chrono-agent:".spec_bytes();
+    assert(raw@.subrange(0, prefix.len() as int) =~= prefix);
+    expect(matches!(layout::html_marker(start, raw), Some(layout::Marker::Opening(at)) if at == start));
+}
+
+#[cfg_attr(not(verus_keep_ghost), test)]
+fn roundtrip_compares_every_field() {
+    let value: &[u8] = &[1u8, 2];
+    let changed: &[u8] = &[1u8, 3];
+    let original = [value, value, value, value, value, value, value, value, value];
+    proof { assert forall|j: int| 0 <= j < 9 implies (#[trigger] original@[j])@ == original@[j]@ by {} }
+    expect(layout::same_fields(&original, &original));
+    let first = [changed, value, value, value, value, value, value, value, value];
+    let last = [value, value, value, value, value, value, value, value, changed];
+    proof {
+        assert(first@[0]@ != original@[0]@);
+        assert(last@[8]@ != original@[8]@);
+    }
+    expect(!layout::same_fields(&original, &first));
+    expect(!layout::same_fields(&original, &last));
+}
+
 }
