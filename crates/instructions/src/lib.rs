@@ -665,7 +665,11 @@ fn prepare(
     }
     let mut rendered = Vec::new();
     for output in &manifest.outputs {
-        let (body, locale) = cat.compose(output, &files)?;
+        let catalog::Composition {
+            markdown: body,
+            locale,
+            ..
+        } = cat.compose(output, &files)?;
         if output.format == Format::RootGuide {
             rendered.push((output, managed_block(&manifest, &locale.root_frame, &body)));
         } else {
@@ -811,6 +815,12 @@ pub mod test_support {
     /// Observe one isolated consumer operation on this thread.
     pub fn with_repair_observation<T>(operation: impl FnOnce() -> T) -> (T, bool) {
         super::publication_decision::observation::observe(operation)
+    }
+
+    pub fn publish_catalog(catalog: &[u8], manifest: &[u8]) -> Result<String, String> {
+        let catalog = super::catalog::parse(catalog)?;
+        let manifest = super::catalog::parse(manifest)?;
+        super::inherit::publish_catalog(&catalog, &manifest)
     }
 
     pub fn read_rules(

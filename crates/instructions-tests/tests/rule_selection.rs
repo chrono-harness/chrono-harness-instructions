@@ -47,21 +47,40 @@ fn catalog_admission_requires_the_declared_schema_and_skill_limits(
 }
 
 #[cfg(verus_keep_ghost)]
-fn dependency_cycle_wins_before_seen_and_missing(stack: &[String], id: &str, index: usize)
-    requires index < stack@.len(), encode_utf8(stack@[index as int]@) == encode_utf8(id@),
-{
+fn dependency_cycle_wins_before_seen_and_missing() {
     use policy::catalog::{Dependency, dependency};
-    let cycle = dependency::<u8>(stack, id, true, None);
-    assert(cycle is Cycle);
-    let no_stack: [String; 0] = [];
-    let seen = dependency::<u8>(&no_stack, id, true, None);
-    let missing = dependency::<u8>(&no_stack, id, false, None);
-    let open = dependency(&no_stack, id, false, Some(3u8));
-    assert(seen is Visited);
-    assert(missing is Missing);
-    match open {
-        Dependency::Open(atom) => { assert(atom == 3); },
-        _ => { assert(false); },
+    let cycle = dependency::<u8>(true, true, None);
+    let seen = dependency::<u8>(false, true, None);
+    let missing = dependency::<u8>(false, false, None);
+    let open = dependency(false, false, Some(3u8));
+    assert(cycle is Cycle && seen is Visited && missing is Missing);
+    assert(open == Dependency::Open(3u8));
+}
+
+#[cfg(verus_keep_ghost)]
+fn successful_walk_has_each_root_and_only_its_prerequisites<'a>(
+    input: &std::collections::BTreeMap<&'a String, &'a policy::catalog::Atom>,
+    roots: &[&'a String],
+    allowed: Set<&'a String>,
+)
+    requires vstd::laws_cmp::obeys_cmp::<&String>(),
+        forall|key: &String| input@.contains_key(key) ==> &(#[trigger] input@[key]).id == key,
+        policy::catalog::closed(input@, allowed), roots@.to_set().subset_of(allowed),
+{
+    if let Ok(order) = policy::catalog::walk(input, roots) {
+        proof {
+            let ids = order@.map(|_i, atom: &policy::catalog::Atom| &atom.id);
+            assert(ids.no_duplicates());
+            assert(roots@.to_set().subset_of(ids.to_set()));
+            assert(ids.to_set().subset_of(allowed));
+            assert forall|i: int, j: int| 0 <= i < order@.len()
+                && 0 <= j < order@[i].requires@.len() implies
+                ids.take(i).to_set().contains(#[trigger] &order@[i].requires@[j]) by {
+                assert(policy::catalog::has_dependencies(input@, ids.take(i).to_set(), ids[i]));
+                // The graph is indexed by the ID of its actual atom.
+                assert(input@.contains_key(ids[i]));
+            }
+        }
     }
 }
 
@@ -126,48 +145,62 @@ fn emitted_text_preserves_first_notice_and_both_bodies(
 }
 
 #[cfg(verus_keep_ghost)]
-fn publication_keeps_section_boundaries<'a>(first: &'a [String], second: &'a [String]) {
-    let mut ids = Vec::new();
-    policy::catalog::append_section(&mut ids, first);
-    policy::catalog::append_section(&mut ids, second);
-    assert(ids@.len() == first@.len() + second@.len());
-    assert forall|i:int| 0 <= i < first@.len() implies ids@[i]@ == first@[i]@ by {}
-    assert forall|i:int| 0 <= i < second@.len() implies ids@[first@.len()+i]@ == second@[i]@ by {}
-}
-
-#[cfg(verus_keep_ghost)]
-fn publication_uses_selected_order_or_the_matching_layout<'a>(atoms: &[&'a policy::catalog::Atom], layouts: &[policy::catalog::Layout], id: &String) {
-    let ids = policy::catalog::selected_ids(atoms);
-    assert(ids@.len() == atoms@.len());
-    assert forall|i:int| 0 <= i < ids@.len() implies ids@[i]@ == atoms@[i].id@ by {}
-    let absent = policy::catalog::layout_for(None, layouts);
-    assert(absent == Ok::<Option<usize>, &String>(None));
-    let explicit = policy::catalog::layout_for(Some(id), layouts);
-    match explicit {
-        Ok(Some(found)) => { assert(encode_utf8(layouts@[found as int].id@) == encode_utf8(id@)); },
-        Ok(None) => { assert(false); },
-        Err(missing) => {
-            assert(missing == id);
-            assert forall|j:int| 0 <= j < layouts@.len() implies encode_utf8(layouts@[j].id@) != encode_utf8(id@) by {}
-        },
-    }
-}
-
-#[cfg(verus_keep_ghost)]
-fn publication_of_all_sections_preserves_first_and_last(sections: &[policy::catalog::Section]) {
-    let ids = policy::catalog::layout_ids(sections);
+fn layout_emits_exact_bodies_in_order<'a>(
+    first: &'a String, second: &'a String, first_text: &'a str, second_text: &'a str,
+    ids: &'a [String],
+)
+    requires first != second, ids@.len() == 2, &ids@[0] == second, &ids@[1] == first,
+        vstd::laws_cmp::obeys_cmp::<&String>(),
+{
+    broadcast use vstd::std_specs::btree::group_btree_axioms;
+    broadcast use vstd::set::group_set_axioms;
+    broadcast use vstd::seq::group_seq_axioms;
+    broadcast use vstd::seq_lib::group_seq_properties;
+    use policy::catalog::{Body, place_section};
+    let mut available = std::collections::BTreeMap::new();
+    let first_body = Body { id: first, text: first_text };
+    let second_body = Body { id: second, text: second_text };
+    available.insert(first, first_body);
+    available.insert(second, second_body);
+    let ghost full = available@;
+    let mut ordered = Vec::new();
+    let result = place_section(&mut available, &mut ordered, ids);
+    assert(result is Ok);
     proof {
-        let ordered = ids@.map(|_index, id: &str| id@);
-        if sections.len() == 0 {
-            assert(ordered.len() == 0);
-        } else {
-            let prefix = policy::catalog::section_order(sections@.drop_last());
-            let last = sections@.last().atoms@;
-            assert(ordered.len() == prefix.len() + last.len());
-            assert forall|i:int| 0 <= i < prefix.len() implies ordered[i] == prefix[i] by {}
-            assert forall|i:int| 0 <= i < last.len() implies ordered[prefix.len()+i] == last[i]@ by {}
-        }
+        assert(ids@.map(|_i, id: String| &id) =~= seq![second, first]);
+        assert(full.dom() =~= set![first, second]);
+        assert(available@.dom() =~= Set::<&String>::empty());
     }
+    assert(ordered@ == seq![second_body, first_body]);
+}
+
+#[cfg(verus_keep_ghost)]
+fn layout_stops_at_the_first_missing_placement<'a>(ids: &'a [String], body: policy::catalog::Body<'a>)
+    requires ids@.len() >= 2, &ids@[0] == body.id, &ids@[1] != body.id,
+        vstd::laws_cmp::obeys_cmp::<&String>(),
+{
+    use policy::catalog::place_section;
+    let mut available = std::collections::BTreeMap::new();
+    available.insert(body.id, body);
+    let mut ordered = Vec::new();
+    let result = place_section(&mut available, &mut ordered, ids);
+    assert(result == Err::<(), &String>(&ids@[1]));
+    assert(ordered@ == seq![body]);
+}
+
+#[cfg(verus_keep_ghost)]
+fn empty_and_nonempty_bodies_keep_their_original_bytes<'a>(
+    id: &'a String, empty: &'a str, text: &'a str,
+)
+    requires empty@.len() == 0, text@.len() > 0,
+{
+    use policy::catalog::{Body, record_body};
+    let mut order = Vec::new();
+    let original = Body { id, text };
+    record_body(&mut order, Body { id, text: empty });
+    record_body(&mut order, original);
+    record_body(&mut order, Body { id, text: empty });
+    assert(order@ == seq![original]);
 }
 
 #[cfg_attr(not(verus_keep_ghost), test)]
@@ -362,31 +395,3 @@ fn delimiter_at_any_offset_prevents_publication() {
 #[cfg(verus_keep_ghost)]
 #[path = "generation.rs"]
 mod generation;
-
-#[cfg(all(test, not(verus_keep_ghost)))]
-#[test]
-fn original_catalog_orders_and_rejections_reach_the_publisher() {
-    use chrono_instructions::rule_selection::rule_order;
-    use serde_json::json;
-    let catalog = json!({
-        "schema_version":1, "locales":[],
-        "atoms":[
-            {"id":"end","requires":["shared"],"variants":[]},
-            {"id":"shared","requires":[],"variants":[]},
-            {"id":"start","requires":["shared"],"variants":[]}
-        ],
-        "layouts":[{"id":"chosen","sections":[
-            {"depth":1,"titles":[],"atoms":["end","start"]},
-            {"depth":2,"titles":[],"atoms":[]},
-            {"depth":1,"titles":[],"atoms":["shared"]}
-        ]}]
-    });
-    let catalog = serde_json::to_vec(&catalog).unwrap();
-    let mut output = json!({"id":"root","path":"CLAUDE.md","format":"root-guide","locale":"en","roots":["start","end"]});
-    let ordered = |o: &serde_json::Value| rule_order(&catalog, &serde_json::to_vec(o).unwrap());
-    assert_eq!(ordered(&output).unwrap(), ["shared", "start", "end"]);
-    output["layout"] = json!("chosen");
-    assert_eq!(ordered(&output).unwrap(), ["end", "start", "shared"]);
-    output["layout"] = json!("absent");
-    assert_eq!(ordered(&output).unwrap_err(), "unknown layout absent");
-}

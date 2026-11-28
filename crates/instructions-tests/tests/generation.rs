@@ -6,8 +6,8 @@ use vstd::prelude::*;
 
 verus! {
 pub fn release_version_line() -> (value: &'static str)
-    ensures value@ == "chrono-instructions 0.1.10\n"@,
-{ "chrono-instructions 0.1.10\n" }
+    ensures value@ == "chrono-instructions 0.1.11\n"@,
+{ "chrono-instructions 0.1.11\n" }
 }
 
 #[cfg(not(verus_keep_ghost))]
@@ -1716,4 +1716,149 @@ fn root_guides_follow_published_selection_without_losing_host_text() {
     sync_rules(h.path(), || panic!("unexpected network access")).unwrap();
     let off = fs::read_to_string(alias).unwrap();
     assert!(off.starts_with("local build command\n") && !off.contains("## first"));
+}
+
+#[test]
+fn guide_and_feed_share_the_exact_resolved_projection() {
+    use chrono_instructions::test_support::{publish_catalog, read_rules, sync_rules};
+    use serde_json::{Value, json};
+    const CATALOG: &str = ".chrono-harness/instructions/catalog.json";
+    let host = Host::new();
+    host.init().unwrap();
+    let mut catalog: Value = serde_json::from_slice(&host.read(CATALOG)).unwrap();
+    let make_atom = |id, requires, text| json!({"id":id,"requires":requires,"variants":[{"locale":"en","source":{"type":"inline","text":text}}]});
+    catalog["atoms"] = json!([
+        make_atom("base", &[][..], "base\r\n"),
+        make_atom("left", &["base"][..], "left"),
+        make_atom("right", &["base"][..], "right"),
+        make_atom("top", &["left", "empty", "right", "left"][..], "top"),
+        make_atom("empty", &["base"][..], "")
+    ]);
+    catalog["layouts"] = json!([{"id":"guide","sections":[
+        {"depth":1,"titles":[{"locale":"en","text":"Methods"}],"atoms":[]},
+        {"depth":2,"titles":[{"locale":"en","text":"Decide"}],"atoms":["top","right"]},
+        {"depth":2,"titles":[{"locale":"en","text":"Inspect"}],"atoms":["base","left"]}
+    ]}]);
+    let mut manifest: Value = serde_json::from_slice(&host.read(MANIFEST)).unwrap();
+    manifest["outputs"] = json!([
+        {"id":"root","path":"CLAUDE.md","format":"root-guide","locale":"en","roots":["top"]}
+    ]);
+    manifest["outputs"][0]["roots"] = json!(["top", "left", "top"]);
+    let publish = |catalog: &Value, manifest: &Value| {
+        publish_catalog(
+            &serde_json::to_vec(catalog).unwrap(),
+            &serde_json::to_vec(manifest).unwrap(),
+        )
+    };
+    for (layout, expected) in [
+        (
+            None,
+            vec![
+                ("base", "base\r\n"),
+                ("left", "left"),
+                ("right", "right"),
+                ("top", "top"),
+            ],
+        ),
+        (
+            Some("guide"),
+            vec![
+                ("top", "top"),
+                ("right", "right"),
+                ("base", "base\r\n"),
+                ("left", "left"),
+            ],
+        ),
+    ] {
+        manifest["outputs"][0]["layout"] = json!(layout);
+        host.write(MANIFEST, serde_json::to_vec(&manifest).unwrap());
+        host.write(CATALOG, serde_json::to_vec(&catalog).unwrap());
+        generate(&host.root).unwrap();
+        assert_alias(&host);
+        let document = String::from_utf8(host.read("CLAUDE.md")).unwrap();
+        let feed = publish(&catalog, &manifest).unwrap();
+        let parsed: Value = serde_json::from_str(&feed).unwrap();
+        let expected_rows: Vec<_> = expected
+            .iter()
+            .map(|(id, text)| json!({"id": id, "text": text}))
+            .collect();
+        assert_eq!(parsed["rules"], json!(expected_rows));
+        let notice = parsed["notice"].as_str().unwrap();
+        let mut expected_sync = format!("{notice}\n");
+        for (id, text) in expected {
+            expected_sync.push_str(&format!("\n## {id}\n\n{text}\n"));
+        }
+        let subscriber = Host::new();
+        subscriber.write("CLAUDE.md", b"Local text.\n");
+        let projection = read_rules(&subscriber.root, || Ok(feed.as_bytes().to_vec())).unwrap();
+        assert_eq!(projection, expected_sync);
+        let fetch = || Ok(feed.as_bytes().to_vec());
+        sync_rules(&subscriber.root, fetch).unwrap();
+        assert_alias(&subscriber);
+        assert_eq!(
+            String::from_utf8(subscriber.read("CLAUDE.md")).unwrap(),
+            format!("Local text.\n{BEGIN}\n{expected_sync}{END}\n"),
+        );
+        assert!(sync_rules(&subscriber.root, fetch).unwrap().is_empty());
+        let expected_document = if layout.is_some() {
+            "# Methods\n\n## Decide\n\ntop\n\nright\n\n## Inspect\n\nbase\r\n\n\nleft"
+        } else {
+            "base\r\n\n\nleft\n\nright\n\ntop"
+        };
+        assert!(document.contains(expected_document), "{document}");
+    }
+
+    manifest["outputs"][0]["layout"] = json!("absent");
+    assert_eq!(
+        publish(&catalog, &manifest).unwrap_err(),
+        "output root: unknown layout absent"
+    );
+    manifest["outputs"][0]["layout"] = json!(null);
+    catalog["atoms"][4]["variants"][0]["source"]["text"] = json!(" \r\n ");
+    assert_eq!(
+        publish(&catalog, &manifest).unwrap_err(),
+        "empty or duplicate upstream rule: empty"
+    );
+}
+
+#[test]
+fn a_deep_catalog_uses_the_same_order_on_a_small_thread_stack() {
+    use serde_json::{Value, json};
+    const CATALOG: &str = ".chrono-harness/instructions/catalog.json";
+    let host = Host::new();
+    host.init().unwrap();
+    let mut manifest: Value = serde_json::from_slice(&host.read(MANIFEST)).unwrap();
+    manifest["outputs"] = json!([
+        {"id":"root","path":"CLAUDE.md","format":"root-guide","locale":"en","roots":["r0"]}
+    ]);
+    host.write(MANIFEST, serde_json::to_vec(&manifest).unwrap());
+    let mut catalog: Value = serde_json::from_slice(&host.read(CATALOG)).unwrap();
+    catalog.as_object_mut().unwrap().remove("layouts");
+    let mut atoms = Vec::new();
+    for i in 0..4096 {
+        let id = format!("r{i}");
+        let child = format!("r{}", i + 1);
+        let requires = [child.as_str()];
+        let requires = if i == 4095 { &[] } else { requires.as_slice() };
+        atoms.push(json!({"id":id,"requires":requires,
+            "variants":[{"locale":"en","source":{"type":"inline","text":id}}]}));
+    }
+    catalog["atoms"] = json!(atoms);
+    host.write(CATALOG, serde_json::to_vec(&catalog).unwrap());
+    let root = host.root.clone();
+    let published = std::thread::Builder::new()
+        .stack_size(256 * 1024)
+        .spawn(move || generate(&root))
+        .unwrap()
+        .join()
+        .unwrap()
+        .unwrap();
+    assert_eq!(published.len(), 1);
+    let guide = String::from_utf8(host.read("CLAUDE.md")).unwrap();
+    let expected = (0..4096)
+        .rev()
+        .map(|i| format!("r{i}"))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    assert!(guide.contains(&expected));
 }
